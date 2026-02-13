@@ -1,0 +1,9 @@
+# 核心依赖
+pip install gradio
+pip install python-dotenv
+pip install dashscope
+pip install pdfplumber
+
+# 可选依赖（如果需要）
+pip install torch
+pip install transformers

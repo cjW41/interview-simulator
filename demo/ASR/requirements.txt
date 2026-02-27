@@ -1,0 +1,4 @@
+openai-whisper==20240930
+torch==2.1.0
+numpy==1.26.0
+sounddevice==0.4.6

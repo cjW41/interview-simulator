@@ -11,7 +11,7 @@ class ServiceEndException(Exception):
 
 class ServiceInitException(ServiceEndException):
     """服务端启动异常"""
-    def __init__(self, source_class: str, message: str):
+    def __init__(self, source_class: str | None, message: str):
         super().__init__()
         self.source_class = source_class
         self.message = message
@@ -22,8 +22,12 @@ class ServiceInitException(ServiceEndException):
 
 class DatabaseException(ServiceEndException):
     """数据库异常基类"""
-    pass
-
+    def __init__(self, *messages: str):
+        super().__init__()
+        self.messages = messages
+    
+    def __str__(self) -> str:
+        return " ".join(self.messages)
 
 class TragetRecordNotFound(DatabaseException):
     """调用 DQL 语句时未找到目标记录"""

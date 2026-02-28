@@ -9,11 +9,11 @@ from .model import (       # Pydantic Models:
     InterviewerModel     # AI 面试官
 )
 from .operation import InsertOperator, GetOperator, UpdateOperator, DeleteOperator  # 数据库 CRUD API
-from .orm import Variable, Domain, Question, CV, Job, LLM, Interviewer
+from .orm import Base, Base2, Variable, Domain, Question, CV, Job, LLM, Interviewer
 from .cache import DBCache  # 数据库缓存
 from .utils import VariableInitialDict, insert_execute
 from ..exception import ServiceInitException
-from sqlalchemy import Engine, create_engine, inspect, text, insert
+from sqlalchemy import Engine, create_engine, inspect, text, insert, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -23,7 +23,7 @@ def db_init(
         cache_size: int,
         cache_ttl: float,
         clear_exists: bool
-    ) -> tuple[Engine, InsertOperator, GetOperator, UpdateOperator, DeleteOperator]:
+    ) -> tuple[InsertOperator, GetOperator, UpdateOperator, DeleteOperator]:
     """
     [服务端启动]
     检查数据库内表是否存在，创建缓存。
@@ -32,7 +32,7 @@ def db_init(
         engine_url (str): 用于 `create_engine`
         cache_size (int): 缓存条数
         cache_ttl (float): 缓存有效时长
-        clear_exists (bool):【WARNING】当数据库已经存在是否**删除**后重新创建
+        clear_exists (bool):【WARNING】是否**删除**当前已经存在的表后重新创建
     
     Return:
         Engine: 数据库引擎
@@ -44,47 +44,29 @@ def db_init(
     engine = create_engine(engine_url)
     inspector = inspect(engine)
     cache = DBCache(size=cache_size, ttl=cache_ttl)
-    try:
-        with Session(bind=engine) as session:
-            # 检查创建普通表
-            for table in [
-                Question,
-                Domain,  # parent of Question
-                CV,
-                Job,
-                Interviewer,  # parent of Job
-                LLM,  # parent of Interviewer
-            ]:
-                table_name = table.__tablename__
-                if inspector.has_table(table_name=table_name):
-                    if clear_exists:
-                        session.execute(text(f"TRUNCATE TABLE {table_name}"))
-                else:
-                    table.__table__.create(engine)  # 无需 checkfirst
 
-            # 单独处理 Variable
-            data = [
-                {"name": k, "value": {"value": v}}
-                for k, v in VariableInitialDict.items()
-            ]
-            dml_stmt = insert(Variable).values(data)
-            if inspector.has_table(table_name=Variable.__tablename__):
-                if clear_exists:
-                    session.execute(text(f"TRUNCATE TABLE {Variable.__tablename__}"))
-                    insert_execute(
-                        session=session,
-                        dml_stmt=dml_stmt,
-                        table=Variable.__tablename__,
-                        data=data
-                    )
-            else:
-                Variable.__table__.create(engine)
+    try:
+        # 普通表
+        if clear_exists:
+            Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+
+        # 单独处理 Variable
+        if clear_exists or not inspector.has_table(table_name=Variable.__tablename__):  # 是否进行创建
+            Base2.metadata.create_all(bind=engine)
+            with Session(bind=engine) as session:
+                data = [
+                    {"name": k, "value": {"value": v}}
+                    for k, v
+                    in VariableInitialDict.items()
+                ]
+                dml_stmt = insert(Variable).values(data)
                 insert_execute(
-                        session=session,
-                        dml_stmt=dml_stmt,
-                        table=Variable.__tablename__,
-                        data=data
-                    )
+                    session=session,
+                    dml_stmt=dml_stmt,
+                    table=Variable.__tablename__,
+                    data=data
+                )
     except SQLAlchemyError as e:
         raise ServiceInitException(
             source_class=e.__class__.__name__,
@@ -92,7 +74,6 @@ def db_init(
         ) from e
 
     return (
-        engine,
         InsertOperator(engine=engine, cache=cache),
         GetOperator(engine=engine, cache=cache),
         UpdateOperator(engine=engine, cache=cache),
@@ -102,12 +83,8 @@ def db_init(
 
 __all__ = [
     "db_init",
-    "QuestionModel",
-    "DomainQuestionBank",
-    "JobModel",
-    "WorkExperience",
-    "CVBasicInfo",
-    "CVModel",
-    "LLMCard",
-    "InterviewerModel",
+    # model
+    "QuestionModel", "DomainQuestionBank", "JobModel", "WorkExperience", "CVBasicInfo", "CVModel", "LLMCard", "InterviewerModel",
+    # operation
+    "InsertOperator", "GetOperator", "UpdateOperator", "DeleteOperator"
 ]

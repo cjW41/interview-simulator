@@ -9,7 +9,7 @@ logging.py        # 日志模块
 exception.py      # 异常类
 /api
     app.py
-    manage_endpoint.py  # 管理端 API Endpoint
+    admin_endpoint.py   # 管理端 API Endpoint
     user_endpoint.py    # 用户端 API Endpoint
 /data
     orm.py        # SQLAlchemy 数据库表对应的 ORM 类
@@ -18,7 +18,6 @@ exception.py      # 异常类
     cache.py      # 数据库缓存支持
     utils.py
 /service
-    base.py           # 定义 llm, agent 等基类
     cv_extraction.py  # 简历提取工作流
     /interview        # 面试支持
         interview.py

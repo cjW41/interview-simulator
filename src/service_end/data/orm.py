@@ -4,14 +4,19 @@ from sqlalchemy import (
     Identity, VARCHAR, REAL, Text, ARRAY,
     PrimaryKeyConstraint, UniqueConstraint, ForeignKeyConstraint,
 )
-from sqlalchemy.orm import declarative_base, mapped_column, relationship, Mapped
+from sqlalchemy.orm import DeclarativeBase, mapped_column, relationship, Mapped
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Any
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
-class Variable(Base):
+class Base2(DeclarativeBase):
+    pass
+
+
+class Variable(Base2):
     """服务端变量表"""
     name: Mapped[str] = mapped_column(VARCHAR(20), primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)  # {'value': the_value}

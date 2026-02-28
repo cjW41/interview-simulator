@@ -14,19 +14,19 @@ from .cache import DBCache  # 数据库缓存
 from .utils import VariableInitialDict, insert_execute
 from ..exception import ServiceInitException
 from sqlalchemy import Engine, create_engine, inspect, text, insert
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, create_async_engine
 from sqlalchemy.exc import SQLAlchemyError
 
 
-def _init_variable_table(engine: Engine) -> None:
+async def _init_variable_table(engine: AsyncEngine) -> None:
     """insert data into Variable"""
     data = [
         {"name": k, "value": {"value": v}}
         for k, v in VariableInitialDict.items()
     ]
-    with Session(bind=engine) as session:
+    async with AsyncSession(bind=engine) as session:
         dml_stmt = insert(Variable).values(data)
-        insert_execute(
+        await insert_execute(
             session=session,
             dml_stmt=dml_stmt,
             table=Variable.__tablename__,
@@ -34,29 +34,29 @@ def _init_variable_table(engine: Engine) -> None:
         )
 
 
-def _execute_clear(engine: Engine) -> None:
+async def _execute_clear(engine: AsyncEngine, sync_engine: Engine) -> None:
     """在 clear_exists=True 时，先删表再创建"""
     # 普通表
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(bind=sync_engine)
+    Base.metadata.create_all(bind=sync_engine)
     # Variable
-    Base2.metadata.drop_all(bind=engine)
-    Base2.metadata.create_all(bind=engine)
-    _init_variable_table(engine=engine)
+    Base2.metadata.drop_all(bind=sync_engine)
+    Base2.metadata.create_all(bind=sync_engine)
+    await _init_variable_table(engine=engine)
 
 
-def _execute_not_clear(engine: Engine) -> None:
+async def _execute_not_clear(engine: AsyncEngine, sync_engine: Engine) -> None:
     """在 clear_exists=True 时，只创建不存在的表"""
     # 普通表
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=sync_engine)
     # Variable
-    inspector = inspect(engine)
+    inspector = inspect(sync_engine)
     if not inspector.has_table(table_name="variable"):
-        Base2.metadata.create_all(bind=engine)
-        _init_variable_table(engine=engine)
+        Base2.metadata.create_all(bind=sync_engine)
+        await _init_variable_table(engine=engine)
 
 
-def db_init(
+async def db_init(
         engine_url: str,
         target_schema: str,
         cache_size: int,
@@ -81,10 +81,11 @@ def db_init(
         UpdateOperator: 数据库更新 API
         DeleteOperator: 数据库删除 API
     """
-    engine = create_engine(engine_url)
-
+    sync_engine = create_engine(engine_url)
+    engine = create_async_engine(engine_url)
+    
     # 验证 schema
-    with engine.connect() as conn:
+    with sync_engine.connect() as conn:
         try:
             current_schemma: str = conn.execute(text("SELECT current_schema();")).scalar_one()
         except SQLAlchemyError as e:
@@ -95,14 +96,15 @@ def db_init(
     # 执行创建
     try:
         if clear_exists:
-            _execute_clear(engine=engine)
+            await _execute_clear(engine=engine, sync_engine=sync_engine)
         else:
-            _execute_not_clear(engine=engine)
+            await _execute_not_clear(engine=engine, sync_engine=sync_engine)
     except SQLAlchemyError as e:
         raise ServiceInitException(source_class=e.__class__.__name__, message=str(e)) from e
 
     # 返回封装了引擎和缓存的 operator
     cache = DBCache(size=cache_size, ttl=cache_ttl)
+    
     return (
         InsertOperator(engine=engine, cache=cache),
         GetOperator(engine=engine, cache=cache),

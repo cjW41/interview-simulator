@@ -3,7 +3,7 @@ from ..exception import TragetRecordNotFound, DatabaseException, InsertError, Up
 from enum import Enum
 from typing import TypeVar
 from sqlalchemy import exc, Select, ScalarResult, Insert, Update, Delete
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
 
@@ -15,8 +15,8 @@ class VariableEnum(Enum):
 VariableInitialDict = {"DOMAIN_COUNT": 0} # 常量初始值
 
 
-def query_one_record(
-        session: Session,
+async def query_one_record(
+        session: AsyncSession,
         dql_stmt: Select[tuple[T]],
         table: str,
         filter_condition: str
@@ -25,7 +25,7 @@ def query_one_record(
     查询一条记录并返回。待查询记录满足唯一性约束。
 
     Args:
-        session: Session 对象
+        session: 异步 Session 对象
         dql_stmt: Select statement
         table: 表名，用于异常记录
         filter_condition: 查询过滤条件，用于异常记录
@@ -35,7 +35,7 @@ def query_one_record(
         DatabaseException: 其它来自 SQLAlchemy 的异常
     """
     try:
-        result = session.execute(statement=dql_stmt)
+        result = await session.execute(statement=dql_stmt)
         record = result.scalar_one()
     except exc.NoResultFound as e:
         raise TragetRecordNotFound(
@@ -46,16 +46,16 @@ def query_one_record(
     return record
 
 
-def session_scalars(session: Session, dql_stmt: Select[tuple[T]]) -> ScalarResult[T]:
+async def session_scalars(session: AsyncSession, dql_stmt: Select[tuple[T]]) -> ScalarResult[T]:
     """使用 `Session.scalars` 方法查询，返回 `ScalarResult`"""
     try:
-        return session.scalars(dql_stmt)
+        return await session.scalars(dql_stmt)
     except exc.SQLAlchemyError as e:
         raise DatabaseException() from e
 
 
-def insert_execute(
-        session: Session,
+async def insert_execute(
+        session: AsyncSession,
         dml_stmt: Insert,
         data: list[dict],
         table: str
@@ -64,7 +64,7 @@ def insert_execute(
     批量插入数据。插入后 commit
 
     Args:
-        session: Session 对象
+        session: 异步 Session 对象
         dml_stmt: Insert statement
         data: 插入数据，用于异常记录
         table: 表名，用于异常记录
@@ -74,18 +74,18 @@ def insert_execute(
         DatabaseException: 其它来自 SQLAlchemy 的异常
     """
     try:
-        session.execute(statement=dml_stmt)
-        session.commit()
+        await session.execute(statement=dml_stmt)
+        await session.commit()
     except (exc.IntegrityError, exc.DataError,) as e:
-        session.rollback()
+        await session.rollback()
         raise InsertError(source_class=e.__class__.__name__, table=table, data=data)
     except exc.SQLAlchemyError as e:
-        session.rollback()
+        await session.rollback()
         raise DatabaseException() from e
 
 
-def update_execute(
-        session: Session,
+async def update_execute(
+        session: AsyncSession,
         dml_stmt: Update,
         table: str,
         filter_condition: str,
@@ -95,7 +95,7 @@ def update_execute(
     通过 execute 执行一条 update。更新后 commit
     
     Args:
-        session: Session 对象
+        session: 异步 Session 对象
         dml_stmt: update statement
         table: 被更新表名称，用于异常记录
         filter_condition: 过滤条件，用于异常记录
@@ -106,10 +106,10 @@ def update_execute(
         DatabaseException: 其它来自 SQLAlchemy 的异常
     """
     try:
-        session.execute(dml_stmt)
-        session.commit()
+        await session.execute(dml_stmt)
+        await session.commit()
     except (exc.IntegrityError, exc.DataError,) as e:
-        session.rollback()
+        await session.rollback()
         raise UpdateError(
             source_class=e.__class__.__name__,
             table=table,
@@ -117,16 +117,16 @@ def update_execute(
             value=value
         ) from e
     except exc.SQLAlchemyError as e:
-        session.rollback()
+        await session.rollback()
         raise DatabaseException() from e
 
 
-def delete_execute(session: Session, dml_stmt: Delete) -> None:
+async def delete_execute(session: AsyncSession, dml_stmt: Delete) -> None:
     """删除记录。删除后 commit"""
     try:
-        session.execute(dml_stmt)
-        session.commit()
+        await session.execute(dml_stmt)
+        await session.commit()
     except exc.SQLAlchemyError as e:
-        session.rollback()
+        await session.rollback()
         raise DatabaseException() from e
 

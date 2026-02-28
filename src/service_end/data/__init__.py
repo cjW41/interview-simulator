@@ -9,20 +9,59 @@ from .model import (       # Pydantic Models:
     InterviewerModel     # AI 面试官
 )
 from .operation import InsertOperator, GetOperator, UpdateOperator, DeleteOperator  # 数据库 CRUD API
-from .orm import Base, Base2, Variable, Domain, Question, CV, Job, LLM, Interviewer
+from .orm import Base, Base2, Variable
 from .cache import DBCache  # 数据库缓存
 from .utils import VariableInitialDict, insert_execute
 from ..exception import ServiceInitException
-from sqlalchemy import Engine, create_engine, inspect, text, insert, select
+from sqlalchemy import Engine, create_engine, inspect, text, insert
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 
+def _init_variable_table(engine: Engine) -> None:
+    """insert data into Variable"""
+    data = [
+        {"name": k, "value": {"value": v}}
+        for k, v in VariableInitialDict.items()
+    ]
+    with Session(bind=engine) as session:
+        dml_stmt = insert(Variable).values(data)
+        insert_execute(
+            session=session,
+            dml_stmt=dml_stmt,
+            table=Variable.__tablename__,
+            data=data
+        )
+
+
+def _execute_clear(engine: Engine) -> None:
+    """在 clear_exists=True 时，先删表再创建"""
+    # 普通表
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    # Variable
+    Base2.metadata.drop_all(bind=engine)
+    Base2.metadata.create_all(bind=engine)
+    _init_variable_table(engine=engine)
+
+
+def _execute_not_clear(engine: Engine) -> None:
+    """在 clear_exists=True 时，只创建不存在的表"""
+    # 普通表
+    Base.metadata.create_all(bind=engine)
+    # Variable
+    inspector = inspect(engine)
+    if not inspector.has_table(table_name="variable"):
+        Base2.metadata.create_all(bind=engine)
+        _init_variable_table(engine=engine)
+
+
 def db_init(
         engine_url: str,
+        target_schema: str,
         cache_size: int,
         cache_ttl: float,
-        clear_exists: bool
+        clear_exists: bool,
     ) -> tuple[InsertOperator, GetOperator, UpdateOperator, DeleteOperator]:
     """
     [服务端启动]
@@ -30,6 +69,7 @@ def db_init(
     
     Args:
         engine_url (str): 用于 `create_engine`
+        target_schema (str): 数据库表所在 schema。若与 current_schema 不匹配，则终止服务端启动。
         cache_size (int): 缓存条数
         cache_ttl (float): 缓存有效时长
         clear_exists (bool):【WARNING】是否**删除**当前已经存在的表后重新创建
@@ -42,37 +82,27 @@ def db_init(
         DeleteOperator: 数据库删除 API
     """
     engine = create_engine(engine_url)
-    inspector = inspect(engine)
-    cache = DBCache(size=cache_size, ttl=cache_ttl)
 
+    # 验证 schema
+    with engine.connect() as conn:
+        try:
+            current_schemma: str = conn.execute(text("SELECT current_schema();")).scalar_one()
+        except SQLAlchemyError as e:
+            raise ServiceInitException(source_class=e.__class__.__name__, message=f"current_schema error: {e}")
+    if current_schemma != target_schema:
+        raise ServiceInitException(source_class=None, message=f"current_schema error: expected '{target_schema}', get '{current_schemma}'")
+    
+    # 执行创建
     try:
-        # 普通表
         if clear_exists:
-            Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
-
-        # 单独处理 Variable
-        if clear_exists or not inspector.has_table(table_name=Variable.__tablename__):  # 是否进行创建
-            Base2.metadata.create_all(bind=engine)
-            with Session(bind=engine) as session:
-                data = [
-                    {"name": k, "value": {"value": v}}
-                    for k, v
-                    in VariableInitialDict.items()
-                ]
-                dml_stmt = insert(Variable).values(data)
-                insert_execute(
-                    session=session,
-                    dml_stmt=dml_stmt,
-                    table=Variable.__tablename__,
-                    data=data
-                )
+            _execute_clear(engine=engine)
+        else:
+            _execute_not_clear(engine=engine)
     except SQLAlchemyError as e:
-        raise ServiceInitException(
-            source_class=e.__class__.__name__,
-            message=str(e)
-        ) from e
+        raise ServiceInitException(source_class=e.__class__.__name__, message=str(e)) from e
 
+    # 返回封装了引擎和缓存的 operator
+    cache = DBCache(size=cache_size, ttl=cache_ttl)
     return (
         InsertOperator(engine=engine, cache=cache),
         GetOperator(engine=engine, cache=cache),

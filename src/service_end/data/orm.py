@@ -21,7 +21,7 @@ class Variable(Base2):
     name: Mapped[str] = mapped_column(VARCHAR(20), primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)  # {'value': the_value}
 
-    __tablename__ = "const"
+    __tablename__ = "variable"
 
 
 class Domain(Base):
@@ -117,7 +117,7 @@ class Interviewer(Base):
     __tablename__ = "interviewer"
     __table_args__ = (
         ForeignKeyConstraint(
-            columns=["model_name"], refcolumns=["llm.model"],
+            columns=["model"], refcolumns=["llm.model"],
             ondelete="SET NULL", onupdate="CASCADE",
         ),
     )

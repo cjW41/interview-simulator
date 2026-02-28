@@ -1,6 +1,6 @@
-import exception as svc_exc
-from data import InsertOperator, GetOperator, UpdateOperator, DeleteOperator
-from api.dependency import DependsFn
+from ...exception import ServiceException
+from ...data import InsertOperator, GetOperator, UpdateOperator, DeleteOperator
+from ...api.dependency import DependsFn
 from fastapi import APIRouter
 
 

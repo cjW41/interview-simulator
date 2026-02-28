@@ -1,15 +1,13 @@
-import json
 import time
-from typing import Any
 
 
-class ServiceEndException(Exception):
+class ServiceException(Exception):
     """服务端异常基类"""
     def __init__(self):
         self.timestamp = time.time()
 
 
-class ServiceInitException(ServiceEndException):
+class ServiceInitException(ServiceException):
     """服务端启动异常"""
     def __init__(self, source_class: str | None, message: str):
         super().__init__()
@@ -20,7 +18,7 @@ class ServiceInitException(ServiceEndException):
         return f"source: {self.source_class}, message: {self.message}"
 
 
-class DatabaseException(ServiceEndException):
+class DatabaseException(ServiceException):
     """数据库异常基类"""
     def __init__(self, *messages: str):
         super().__init__()

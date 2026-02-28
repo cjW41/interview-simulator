@@ -1,37 +1,41 @@
-import exception as svc_exc
-from data import GetOperator, InsertOperator, UpdateOperator, DeleteOperator
+from ..exception import ServiceException, ServiceInitException
+from ..data import GetOperator, InsertOperator, UpdateOperator, DeleteOperator
 from fastapi import FastAPI, Request, Depends
-from pydantic import BaseModel
 
 
 # 通过属性注入依赖的 App 类
-class DependencyModel(BaseModel):
-    insert_operator: InsertOperator
-    get_operator: GetOperator
-    update_operator: UpdateOperator
-    delete_operator: DeleteOperator
+class AppDependency:
+    def __init__(self,
+                 insert_operator: InsertOperator,
+                 get_operator: GetOperator,
+                 update_operator: UpdateOperator,
+                 delete_operator: DeleteOperator,):
+        self.insert_operator = insert_operator
+        self.get_operator = get_operator
+        self.update_operator = update_operator
+        self.delete_operator = delete_operator
 
 
 class FastAPIwithDI(FastAPI):
     
-    def inject_my_dependency(self, dependency: DependencyModel):
-        """将 DependencyModel 对象作为属性 dependency 添加到 app 上"""
+    def inject_my_dependency(self, dependency: AppDependency):
+        """将 AppDependency 对象作为属性 dependency 添加到 app 上"""
         if hasattr(self, "dependency"):
             message = "Dependency Injection Error. Attribute 'dependency' already exists."
-            raise svc_exc.ServiceInitException(source_class=None, message=message)
+            raise ServiceInitException(source_class=None, message=message)
         self.__setattr__("dependency", dependency)
 
 
 # 函数注入 APIRouter 依赖的 Get/Insert/Update/DeleteOperator
-def examin_request(rq: Request) -> DependencyModel:
-    """从 Request 验证并提取 DependencyModel"""
+def examin_request(rq: Request) -> AppDependency:
+    """从 Request 验证并提取 AppDependency"""
     if not isinstance(rq.app, FastAPIwithDI):
-        raise svc_exc.ServiceEndException()
+        raise ServiceException()
     if not hasattr(rq.app, "dependency"):
-        raise svc_exc.ServiceEndException()
+        raise ServiceException()
     dependency = getattr(rq.app, "dependency")
-    if not isinstance(dependency, DependencyModel):
-        raise svc_exc.ServiceEndException()
+    if not isinstance(dependency, AppDependency):
+        raise ServiceException()
     return dependency
 
 

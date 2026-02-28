@@ -1,9 +1,9 @@
 # data.operation
-import exception as svc_exc
-from data.model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
-from data.cache import DBCache
-from data.orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
-from data.utils import VariableEnum, query_one_record, session_scalars, insert_execute, update_execute, delete_execute
+from ..exception import DatabaseException, TragetRecordNotFound
+from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
+from .cache import DBCache
+from .orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
+from .utils import VariableEnum, query_one_record, session_scalars, insert_execute, update_execute, delete_execute
 from sqlalchemy import exc, Engine, select, insert, update, delete
 from sqlalchemy.orm import Session
 from collections import defaultdict
@@ -53,10 +53,10 @@ class InsertOperator:
                 domain_count = value["value"]
             else:
                 messages = (f"'value' type error: (expected: 'dict', get: '{value.__class__.__name__}')",)
-                raise svc_exc.DatabaseException(*messages)
+                raise DatabaseException(*messages)
             if not isinstance(domain_count, int):
                 messages = (f"'domain_count' type error: (expected: 'int', get: '{domain_count.__class__.__name__}')",)
-                raise svc_exc.DatabaseException(*messages)
+                raise DatabaseException(*messages)
 
             # 更新 domain_count
             domain_count += 1
@@ -69,7 +69,7 @@ class InsertOperator:
                 session.execute(statement=dml_stmt)
             except exc.SQLAlchemyError as e:
                 session.rollback()
-                raise svc_exc.DatabaseException() from e
+                raise DatabaseException() from e
 
             # 插入新 domain 记录
             nrows = len(model.sub_domains)
@@ -193,9 +193,9 @@ class GetOperator:
                 results = session.scalars(dql_stmt).all()
                 if len(results) < len(ids):
                     not_found_ids = set(ids).difference(set(r.id_ for r in results))
-                    raise svc_exc.TragetRecordNotFound(table="question", filter_condition=f"id={not_found_ids}")
+                    raise TragetRecordNotFound(table="question", filter_condition=f"id={not_found_ids}")
             except exc.SQLAlchemyError as e:
-                raise svc_exc.DatabaseException() from e
+                raise DatabaseException() from e
         return [QuestionModel.model_validate(q) for q in results]
 
     def domain_question_bank(self, domain_name: str) -> DomainQuestionBank:
@@ -206,7 +206,7 @@ class GetOperator:
             try:
                 result = session.execute(dql_stmt)
             except exc.SQLAlchemyError as e:
-                raise svc_exc.DatabaseException() from e
+                raise DatabaseException() from e
 
         # 构建 DomainQuestionBank
         question_ids: dict[str, list[int]] = defaultdict(list)

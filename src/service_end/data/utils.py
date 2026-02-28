@@ -59,7 +59,7 @@ def insert_execute(
         dml_stmt: Insert,
         data: list[dict],
         table: str
-    ):
+    ) -> None:
     """
     批量插入数据。插入后 commit
 
@@ -84,7 +84,13 @@ def insert_execute(
         raise DatabaseException() from e
 
 
-def update_execute(session: Session, dml_stmt: Update, table: str, filter_condition: str, value: dict):
+def update_execute(
+        session: Session,
+        dml_stmt: Update,
+        table: str,
+        filter_condition: str,
+        value: dict
+    ) -> None:
     """
     通过 execute 执行一条 update。更新后 commit
     
@@ -115,7 +121,7 @@ def update_execute(session: Session, dml_stmt: Update, table: str, filter_condit
         raise DatabaseException() from e
 
 
-def delete_execute(session: Session, dml_stmt: Delete):
+def delete_execute(session: Session, dml_stmt: Delete) -> None:
     """删除记录。删除后 commit"""
     try:
         session.execute(dml_stmt)

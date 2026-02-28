@@ -208,6 +208,7 @@ __marimo__/
 
 # test
 **/test.py
+**/test/
 
 # deprecated functions
 deprecated/

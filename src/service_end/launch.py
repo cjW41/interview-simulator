@@ -1,20 +1,13 @@
 from data import db_init
-from api import create_app, FastAPIDependency
-
+from api import create_app
+from api.dependency import DependencyModel
 import uvicorn
 
-# 加载数据库
-i_operator, g_operator, u_operator, d_operator = db_init()  # 从 yaml 传入
 
-# 加载 app
-app = create_app(
-    FastAPIDependency(
-        insert_operator=i_operator,
-        get_operator=g_operator,
-        update_operator=u_operator,
-        delete_operator=d_operator
-    )
-)
+# 加载 数据库/app
+I, G, U, D = db_init()  # TODO 从配置文件加载
+dependency = DependencyModel(insert_operator=I, get_operator=G, update_operator=U, delete_operator=D)
+app = create_app(dependency=dependency)
 
 
 if __name__ == "__main__":

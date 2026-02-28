@@ -3,19 +3,21 @@
 **服务端目录**
 
 ```
-server_launch.py  # 服务端启动
-config.py         # 服务端配置加载
-logging.py        # 日志模块
-exception.py      # 异常类
+launch.py     # 服务端启动
+config.py     # 服务端配置加载
+logging.py    # 日志模块
+exception.py  # 异常类
 /api
-    app.py
-    admin_endpoint.py   # 管理端 API Endpoint
-    user_endpoint.py    # 用户端 API Endpoint
+    app.py         # app 创建
+    dependency.py  # 依赖注入
+    /endpoint
+        admin_endpoint.py   # 管理端 API Endpoint
+        user_endpoint.py    # 用户端 API Endpoint
 /data
     orm.py        # SQLAlchemy 数据库表对应的 ORM 类
     model.py      # 定义数据结构
     operation.py  # 数据库操作 API
-    cache.py      # 数据库缓存支持
+    cache.py      # 数据库查询缓存
     utils.py
 /service
     cv_extraction.py  # 简历提取工作流

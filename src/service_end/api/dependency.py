@@ -6,8 +6,8 @@ from pydantic import BaseModel
 
 # 通过属性注入依赖的 App 类
 class DependencyModel(BaseModel):
-    get_operator: GetOperator
     insert_operator: InsertOperator
+    get_operator: GetOperator
     update_operator: UpdateOperator
     delete_operator: DeleteOperator
 

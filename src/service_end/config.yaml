@@ -6,10 +6,10 @@ db_init:
     port: 5432
     db: "simu"
   target_schema: "simu"
+  clear_exists: True
+cache:
   cache_size: 100
   cache_ttl: 3600
-  clear_exists: True
-
 app:
   host: "127.0.0.1"
   port: 8000

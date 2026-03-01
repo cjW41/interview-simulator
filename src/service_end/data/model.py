@@ -28,14 +28,12 @@ class DomainQuestionBank(BaseModel):
     sub_domains: list[str] = Field(max_length=20)  # 子领域
     question_ids: dict[str, list[int]] | None = Field(default=None)  # key: sub_domain, val: question_indices_list
 
-
+ 
 # 岗位
 class JobModel(ORMBaseModel):
-    name: str = Field(max_length=20)                      # 名称
-    job_requirements: list[str]      # 岗位要求
-    job_responsibilities: list[str]  # 岗位职责
-    question_banks: list[dict[str, str]]  # {'domain': domain_name, 'sub_domain': sub_domain_name}
-    interviewer_name: str            # 面试官名称
+    name: str = Field(max_length=20)  # 名称
+    job_requirements: list[str]       # 岗位要求
+    job_responsibilities: list[str]   # 岗位职责
 
 
 # 简历
@@ -69,11 +67,22 @@ class LLMCard(ORMBaseModel):
     cost_limit: float = Field(default=1E8)  # 大模型 API 费用上限, 默认不设上限
 
 
-# 面试官
+# 面试
 class InterviewerModel(ORMBaseModel):
     """AI 面试官"""
     name: str = Field(max_length=20)
     model: str
     system_prompt: str
 
+
+class InterviewArrangement(BaseModel):
+    """一场面试"""
+    job: JobModel
+    interviewer: InterviewerModel
+    question_banks: list[DomainQuestionBank]
+
+
+class InterviewResponse(BaseModel):
+    """面试记录与总结"""
+    
 

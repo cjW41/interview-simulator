@@ -8,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase, mapped_column, relationship, Mapped
 from sqlalchemy.dialects.postgresql import JSONB
 from typing import Any
 
+
 class Base(DeclarativeBase):
     pass
 
@@ -78,17 +79,9 @@ class Job(Base):
     name: Mapped[str] = mapped_column(VARCHAR(20), primary_key=True)
     job_requirements: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     job_responsibilities: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
-    question_banks: Mapped[list[dict[str, str]]] = mapped_column(JSONB(), nullable=False)  # [{'domain': domain_name, 'sub_domain': sub_domain_name}]
-    interviewer_name: Mapped[str | None] = mapped_column(VARCHAR(20), nullable=False)
 
-    interviewer: Mapped[Interviewer] = relationship(back_populates="jobs")
     __tablename__ = "job"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            columns=["interviewer_name"], refcolumns=["interviewer.name"],
-            ondelete="SET NULL", onupdate="CASCADE",
-        ),
-    )
+
 
 
 class LLM(Base):
@@ -117,8 +110,10 @@ class Interviewer(Base):
     __tablename__ = "interviewer"
     __table_args__ = (
         ForeignKeyConstraint(
-            columns=["model"], refcolumns=["llm.model"],
-            ondelete="SET NULL", onupdate="CASCADE",
+            columns=["model"],
+            refcolumns=["llm.model"],
+            ondelete="SET NULL",
+            onupdate="CASCADE",
         ),
     )
 

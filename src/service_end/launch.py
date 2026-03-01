@@ -18,6 +18,7 @@ def ensemble_engine_url(user: str, pwd: str, host: str, port: int, db: str):
     return f"postgresql+psycopg://{user}:{pwd}@{host}:{port}/{db}"
 
 
+# /src >>> python -m service_end.launch
 if __name__ == "__main__":
     config_path = Path(__file__).parent/"config.yaml"
     with open(config_path) as f:
@@ -28,8 +29,6 @@ if __name__ == "__main__":
         db_init(
             engine_url=ensemble_engine_url(**config["db_init"]["url"]),
             target_schema=config["db_init"]["target_schema"],
-            cache_size=config["db_init"]["cache_size"],
-            cache_ttl=config["db_init"]["cache_ttl"],
             clear_exists=config["db_init"]["clear_exists"],
         )
     )

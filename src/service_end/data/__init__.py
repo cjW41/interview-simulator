@@ -1,16 +1,6 @@
-from .model import (       # Pydantic Models:
-    QuestionModel,       # 领域面试问题
-    DomainQuestionBank,  # 领域题库
-    JobModel,            # 岗位
-    WorkExperience,      # 工作经历, CVBasicInfo 一部分
-    CVBasicInfo,         # 简历基本数据, CVModel 一部分
-    CVModel,             # 简历
-    LLMCard,             # 大模型
-    InterviewerModel     # AI 面试官
-)
+import .model
 from .operation import InsertOperator, GetOperator, UpdateOperator, DeleteOperator  # 数据库 CRUD API
 from .orm import Base, Base2, Variable
-from .cache import DBCache  # 数据库缓存
 from .utils import VariableInitialDict, insert_execute
 from ..exception import ServiceInitException
 from sqlalchemy import Engine, create_engine, inspect, text, insert
@@ -59,8 +49,6 @@ async def _execute_not_clear(engine: AsyncEngine, sync_engine: Engine) -> None:
 async def db_init(
         engine_url: str,
         target_schema: str,
-        cache_size: int,
-        cache_ttl: float,
         clear_exists: bool,
     ) -> tuple[InsertOperator, GetOperator, UpdateOperator, DeleteOperator]:
     """
@@ -91,7 +79,10 @@ async def db_init(
         except SQLAlchemyError as e:
             raise ServiceInitException(source_class=e.__class__.__name__, message=f"current_schema error: {e}")
     if current_schemma != target_schema:
-        raise ServiceInitException(source_class=None, message=f"current_schema error: expected '{target_schema}', get '{current_schemma}'")
+        raise ServiceInitException(
+            source_class=None,
+            message=f"current_schema error: expected '{target_schema}', get '{current_schemma}'"
+        )
     
     # 执行创建
     try:
@@ -102,21 +93,16 @@ async def db_init(
     except SQLAlchemyError as e:
         raise ServiceInitException(source_class=e.__class__.__name__, message=str(e)) from e
 
-    # 返回封装了引擎和缓存的 operator
-    cache = DBCache(size=cache_size, ttl=cache_ttl)
-    
+    # 返回封装了引擎的 operator
     return (
-        InsertOperator(engine=engine, cache=cache),
-        GetOperator(engine=engine, cache=cache),
-        UpdateOperator(engine=engine, cache=cache),
-        DeleteOperator(engine=engine, cache=cache),
+        InsertOperator(engine=engine),
+        GetOperator(engine=engine),
+        UpdateOperator(engine=engine),
+        DeleteOperator(engine=engine),
     )
 
 
 __all__ = [
-    "db_init",
-    # model
-    "QuestionModel", "DomainQuestionBank", "JobModel", "WorkExperience", "CVBasicInfo", "CVModel", "LLMCard", "InterviewerModel",
-    # operation
+    "db_init", "model",
     "InsertOperator", "GetOperator", "UpdateOperator", "DeleteOperator"
 ]

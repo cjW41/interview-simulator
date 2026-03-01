@@ -1,10 +1,16 @@
 import time
 
 
-class ServiceException(Exception):
-    """服务端异常基类"""
+class ExceptionBase(Exception):
+    """异常基类"""
     def __init__(self):
         self.timestamp = time.time()
+
+
+class ServiceException(ExceptionBase):
+    """服务端异常基类"""
+    def __init__(self):
+        super().__init__()
 
 
 class ServiceInitException(ServiceException):
@@ -59,12 +65,28 @@ class UpdateError(DatabaseException):
         self.filter_condition = filter_condition
         self.value = value
     
-    def __str__(self,) -> str:
+    def __str__(self) -> str:
         return f"source: {self.source_class}, table: {self.table}, filter: {self.filter_condition}, value: {self.value}"
 
 
+class DBCacheError(ServiceException):
+    """DBCache 产生的异常"""
+    def __init__(self, message: str):
+        super().__init__()
+        self.message = message
+    
+    def __str__(self) -> str:
+        return self.message
 
 
+class UserException(ExceptionBase):
+    """用户端异常基类"""
+    def __init__(self):
+        super().__init__()
 
 
+class UploadError(UserException):
+    """用户上传文件异常"""
+    def __init__(self):
+        super().__init__()
 

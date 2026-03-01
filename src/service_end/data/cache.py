@@ -1,6 +1,99 @@
+from ..exception import DBCacheError
 import time
+import inspect
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Callable
+from enum import Enum
+from functools import wraps
+
+
+class KeyType(Enum):
+    """缓存键类型枚举"""
+
+    DOMAIN_SUBDOMAIN = "DOMAIN_SUBDOMAIN"
+    CV_TITLE = "CV_TITLE"
+    QUESTION_BANK = "QUESTION_BANK"
+    ALL_DOMAIN_NAME = "ALL_DOMAIN_NAME"
+    ALL_JOB = "ALL_JOB"
+    ALL_CV_TITLE = "ALL_CV_TITLE"
+    ALL_LLM = "ALL_LLM"
+    ALL_INTERVIEWER = "ALL_INTERVIEWER"
+
+
+class KeyFactory:
+    """
+    规范缓存键工厂
+    
+    添加新缓存：
+    1. 在 `KeyTpye` 加上键类型
+    2. 在 `KeyFactory` 下方添加对应的 _get 方法
+    3. 在 router 中注册 _get 方法
+    """
+
+    @classmethod
+    def get(cls, key_type: KeyType, **kwargs) -> str:
+        """生产缓存键。键内参数通过 `kwargs` 传入"""
+        getter = cls._method_router(key_type=key_type)
+        arg_name_set = set(inspect.signature(getter).parameters.keys())
+        if arg_name_set <= set(kwargs.keys()):
+            return getter(
+                **{k: kwargs[k] for k in arg_name_set}
+            )
+        else:
+            raise DBCacheError(f"cache key building arg missing: {arg_name_set.difference(set(kwargs.keys()))}")
+
+    @classmethod
+    def _method_router(cls, key_type: KeyType) -> Callable[..., str]:
+        if key_type == KeyType.DOMAIN_SUBDOMAIN:
+            return cls._get_domain_subdomain
+        elif key_type == KeyType.CV_TITLE:
+            return cls._get_cv_title
+        elif key_type == KeyType.QUESTION_BANK:
+            return cls._get_question_bank
+        elif key_type == KeyType.ALL_DOMAIN_NAME:
+            return cls._get_all_domain_name
+        elif key_type == KeyType.ALL_JOB:
+            return cls._get_all_job
+        elif key_type == KeyType.ALL_CV_TITLE:
+            return cls._get_all_cv_title
+        elif key_type == KeyType.ALL_LLM:
+            return cls._get_all_llm
+        elif key_type == KeyType.ALL_INTERVIEWER:
+            return cls._get_all_interviewer
+        else:
+            raise DBCacheError(f"invalid key type: {key_type}")
+
+    @classmethod
+    def _get_domain_subdomain(cls, domain_name: str, sub_domain_name: str) -> str:
+        return f"{domain_name}-{sub_domain_name}"
+
+    @classmethod
+    def _get_cv_title(cls, title: str) -> str:
+        return f"CV-{title}"
+
+    @classmethod
+    def _get_question_bank(cls, domain_name: str) -> str:
+        return f"QUESTION_BANK_{domain_name}"
+
+    @classmethod
+    def _get_all_domain_name(cls) -> str:
+        return "ALL_DOMAIN_NAME"
+
+    @classmethod
+    def _get_all_job(cls) -> str:
+        return "ALL_JOB"
+
+    @classmethod
+    def _get_all_cv_title(cls) -> str:
+        return "ALL_CV_TITLE"
+
+    @classmethod
+    def _get_all_llm(cls) -> str:
+        return "ALL_LLM"
+
+    @classmethod
+    def _get_all_interviewer(cls) -> str:
+        return "ALL_INTERVIEWER"
 
 
 class DBCache:
@@ -9,13 +102,15 @@ class DBCache:
     
     缓存对象
     ```
-    key | value | 关联 table
-    {domain_name}-{sub_domain_name} | (domain_id, sub_domain_id) | Domain
-    CV-{title} | CVModel 对象 | CV
-    ALL_JOB | JobModel 的列表 | Job
-    ALL_CV_TITLE | 所有 CV 的 title 的列表 | CV
-    ALL_LLM | 所有 LLMCard 的列表 | LLM
-    ALL_INTERVIEWER | 所有 Interviewer 的列表 | Interviewer
+    | key | value | 关联 table |
+    | --- | --- | --- |
+    | {domain_name}-{sub_domain_name} | (domain_id, sub_domain_id) | Domain |
+    | CV-{title} | CVModel 对象 | CV |
+    | QUESTION_BANK_{domain_name} | DomainQuestionBank 对象 | Domain, Question |
+    | ALL_JOB | JobModel 的列表 | Job |
+    | ALL_CV_TITLE | 所有 CV 的 title 的列表 | CV |
+    | ALL_LLM | 所有 LLMCard 的列表 | LLM |
+    | ALL_INTERVIEWER | 所有 Interviewer 的列表 | Interviewer |
     ```
 
     Attributes:
@@ -73,4 +168,23 @@ class DBCache:
         if key in self.cache:
             self.cache.pop(key)
 
+
+def with_cache_async(cache: DBCache, key_type: KeyType):
+    """
+    缓存创建方法装饰器。当缓存中不存在指定数据时调用被装饰函数创建后返回，否则直接返回缓存数据。
+    注意：用于构建缓存键的参数必须以关键字形式传入。
+    """
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapped_fn(*args, **kwargs):
+            KEY = KeyFactory.get(key_type=key_type, arg_dict=kwargs)
+            cache_data = cache.get(KEY)
+            if cache_data is not None:
+                data = cache_data
+            else:
+                data = await fn(*args, **kwargs)
+                cache.update(key=KEY, value=data)
+            return data
+        return wrapped_fn
+    return decorator
 

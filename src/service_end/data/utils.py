@@ -42,7 +42,7 @@ async def query_one_record(
             table=table, filter_condition=filter_condition
         ) from e
     except exc.SQLAlchemyError as e:
-        raise DatabaseException() from e
+        raise DatabaseException(str(e)) from e
     return record
 
 
@@ -51,7 +51,7 @@ async def session_scalars(session: AsyncSession, dql_stmt: Select[tuple[T]]) -> 
     try:
         return await session.scalars(dql_stmt)
     except exc.SQLAlchemyError as e:
-        raise DatabaseException() from e
+        raise DatabaseException(str(e)) from e
 
 
 async def insert_execute(
@@ -81,7 +81,7 @@ async def insert_execute(
         raise InsertError(source_class=e.__class__.__name__, table=table, data=data)
     except exc.SQLAlchemyError as e:
         await session.rollback()
-        raise DatabaseException() from e
+        raise DatabaseException(str(e)) from e
 
 
 async def update_execute(
@@ -118,7 +118,7 @@ async def update_execute(
         ) from e
     except exc.SQLAlchemyError as e:
         await session.rollback()
-        raise DatabaseException() from e
+        raise DatabaseException(str(e)) from e
 
 
 async def delete_execute(session: AsyncSession, dml_stmt: Delete) -> None:
@@ -128,5 +128,5 @@ async def delete_execute(session: AsyncSession, dml_stmt: Delete) -> None:
         await session.commit()
     except exc.SQLAlchemyError as e:
         await session.rollback()
-        raise DatabaseException() from e
+        raise DatabaseException(str(e)) from e
 

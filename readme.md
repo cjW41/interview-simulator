@@ -1,10 +1,24 @@
 # 1. 服务端创建环境
 
+### python 环境
+
 ```bash
 > conda create env-name python=3.11.14
 > conda activate env-name
 > pip install -r requirements.txt
 ```
+
+### 数据库
+- `postgresql 15.17`
+- 数据库与用户创建 (在 bash 中以启动 `psql`)
+    ```
+    postgres=# CREATE DATABASE simu;         // 创建数据库
+    postgres=# \c simu                       // 切换到数据库 simu
+    simu=# CREATE USER simu;                 // 创建用户
+    simu=# CREATE SCHEMA simu;               
+    simu=# ALTER SCHEMA simu OWNER TO simu;  // 移交 schema 所属. database simu 属于用户 postgres, schema simu 属于用户 simu
+    simu=# alter user simu password 'simu123456';
+    ```
 
 # 2. 服务端
 

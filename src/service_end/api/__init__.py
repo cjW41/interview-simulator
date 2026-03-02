@@ -1,4 +1,2 @@
-from .app import create_app
-from .dependency import AppDependency
-
-__all__ = ["create_app", "AppDependency"]
+from .admin_endpoint  import router as admin_router
+from .user_endpoint import router as user_router

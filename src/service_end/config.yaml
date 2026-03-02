@@ -1,4 +1,7 @@
-db_init:
+# app, fastapi should not be empty
+
+# table_init 参数
+table_init:
   url:
     user: "simu"
     pwd: "simu123456"
@@ -7,9 +10,17 @@ db_init:
     db: "simu"
   target_schema: "simu"
   clear_exists: True
+
+# DBCache 参数
 cache:
   cache_size: 100
   cache_ttl: 3600
+
+# uvicorn.run 参数
 app:
   host: "127.0.0.1"
   port: 8000
+
+# FastAPI 初始化参数
+fastapi:
+  title: "service-end"

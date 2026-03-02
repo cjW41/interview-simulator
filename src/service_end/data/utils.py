@@ -2,7 +2,7 @@
 from ..exception import TragetRecordNotFound, DatabaseException, InsertError, UpdateError
 from enum import Enum
 from typing import TypeVar
-from sqlalchemy import exc, Select, ScalarResult, Insert, Update, Delete
+from sqlalchemy import exc, Select, Insert, Update, Delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
@@ -37,19 +37,11 @@ async def query_one_record(
     try:
         result = await session.execute(statement=dql_stmt)
         record = result.scalar_one()
+        return record
     except exc.NoResultFound as e:
         raise TragetRecordNotFound(
             table=table, filter_condition=filter_condition
         ) from e
-    except exc.SQLAlchemyError as e:
-        raise DatabaseException(str(e)) from e
-    return record
-
-
-async def session_scalars(session: AsyncSession, dql_stmt: Select[tuple[T]]) -> ScalarResult[T]:
-    """使用 `Session.scalars` 方法查询，返回 `ScalarResult`"""
-    try:
-        return await session.scalars(dql_stmt)
     except exc.SQLAlchemyError as e:
         raise DatabaseException(str(e)) from e
 
@@ -75,12 +67,9 @@ async def insert_execute(
     """
     try:
         await session.execute(statement=dml_stmt)
-        await session.commit()
     except (exc.IntegrityError, exc.DataError,) as e:
-        await session.rollback()
         raise InsertError(source_class=e.__class__.__name__, table=table, data=data)
     except exc.SQLAlchemyError as e:
-        await session.rollback()
         raise DatabaseException(str(e)) from e
 
 
@@ -107,9 +96,7 @@ async def update_execute(
     """
     try:
         await session.execute(dml_stmt)
-        await session.commit()
     except (exc.IntegrityError, exc.DataError,) as e:
-        await session.rollback()
         raise UpdateError(
             source_class=e.__class__.__name__,
             table=table,
@@ -117,7 +104,6 @@ async def update_execute(
             value=value
         ) from e
     except exc.SQLAlchemyError as e:
-        await session.rollback()
         raise DatabaseException(str(e)) from e
 
 
@@ -125,8 +111,6 @@ async def delete_execute(session: AsyncSession, dml_stmt: Delete) -> None:
     """删除记录。删除后 commit"""
     try:
         await session.execute(dml_stmt)
-        await session.commit()
     except exc.SQLAlchemyError as e:
-        await session.rollback()
         raise DatabaseException(str(e)) from e
 

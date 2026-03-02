@@ -32,10 +32,6 @@ class Domain(Base):
     domain_id: Mapped[int] = mapped_column(nullable=False)
     sub_domain_id: Mapped[int] = mapped_column(nullable=False)
 
-    questions: Mapped[list[Question]] = relationship(
-        back_populates="domain",
-        cascade="all, delete-orphan"
-    )
     __tablename__ = "domain"
     __table_args__ = (
         PrimaryKeyConstraint("domain_id", "sub_domain_id"),
@@ -106,7 +102,6 @@ class Interviewer(Base):
     system_prompt: Mapped[str] = mapped_column(Text(), nullable=False)
 
     llm: Mapped[LLM] = relationship(back_populates="interviewers",)
-    jobs: Mapped[list[Job]] = relationship(back_populates="interviewer")
     __tablename__ = "interviewer"
     __table_args__ = (
         ForeignKeyConstraint(

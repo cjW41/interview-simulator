@@ -1,54 +1,56 @@
-from ...exception import ServiceException
-from ...data import InsertOperator, GetOperator, UpdateOperator, DeleteOperator
-from ...data.model import JobModel, CVModel, LLMCard, InterviewerModel, DomainQuestionBank, QuestionModel, InterviewArrangement
-from ...api.dependency import DependsFn
-from ...service import question_gen_workflow
-from fastapi import APIRouter, Query
+from ..exception import ServiceException
+from ..data import db, insert_operator, get_operator, update_operator, delete_operator
+from ..data.model import JobModel, CVModel, LLMCard, InterviewerModel, DomainQuestionBank
+from ..service import question_gen_workflow
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, Query
 
 router = APIRouter(prefix="/admin", tags=["Admin Endpoints"])
+SessionDepends_Commit = Depends(db.get_session_commit, use_cache=False)  # with commit
+SessionDepends_WT_Commit = Depends(db.get_session_wt_commit, use_cache=False)  # without commit
 
 
 # get data
 
 @router.get("/status")
-def status(dependency: GetOperator = DependsFn.GetOperator):
-    return {"message": f"interview simulator is alive. dependency '{dependency.__class__.__name__}' is injected"}
+def status(session: AsyncSession = SessionDepends_WT_Commit):
+    return {"message": f"interview simulator is alive. dependency '{session.__class__.__name__}' is injected"}
 
 
 @router.get("/all_domain_name")
-async def get_all_domain_name(get_operator: GetOperator = DependsFn.GetOperator) -> list[str]:
+async def get_all_domain_name(session: AsyncSession = SessionDepends_WT_Commit) -> list[str]:
     """当前数据库内已有领域题库的领域名称"""
-    return await get_operator.all_domain_name()
+    return await get_operator.all_domain_name(session=session)
 
 
 @router.get("/all_job", response_model=list[JobModel])
-async def get_all_job(get_operator: GetOperator = DependsFn.GetOperator):
+async def get_all_job(session: AsyncSession = SessionDepends_WT_Commit):
     """查询当前所有 Job"""
-    return await get_operator.all_job()
+    return await get_operator.all_job(session=session)
 
 
 @router.get("/cv", response_model=CVModel)
-async def get_cv(title: str, get_operator: GetOperator = DependsFn.GetOperator):
+async def get_cv(title: str, session: AsyncSession = SessionDepends_WT_Commit):
     """查询一个 cv"""
-    return await get_operator.cv(title=title)
+    return await get_operator.cv(session=session, title=title)
 
 
 @router.get("/all_cv_title")
-async def get_all_cv_title(get_operator: GetOperator = DependsFn.GetOperator) -> list[str]:
+async def get_all_cv_title(session: AsyncSession = SessionDepends_WT_Commit) -> list[str]:
     """查询当前所有 cv 的名称"""
-    return await get_operator.all_cv_titles()
+    return await get_operator.all_cv_titles(session=session)
 
 
 @router.get("/all_llm", response_model=list[LLMCard])
-async def get_all_llm(get_operator: GetOperator = DependsFn.GetOperator):
+async def get_all_llm(session: AsyncSession = SessionDepends_WT_Commit):
     """查询当前全部 LLM"""
-    return await get_operator.all_llm()
+    return await get_operator.all_llm(session=session)
 
 
 @router.get("/all_interviewer", response_model=list[InterviewerModel])
-async def get_all_interviewer(get_operator: GetOperator = DependsFn.GetOperator):
+async def get_all_interviewer(session: AsyncSession = SessionDepends_WT_Commit):
     """查询当前全部 LLM"""
-    return await get_operator.all_interviewer()
+    return await get_operator.all_interviewer(session=session)
 
 
 # insert new data
@@ -57,11 +59,11 @@ async def get_all_interviewer(get_operator: GetOperator = DependsFn.GetOperator)
 async def create_domain(
     domain_name: str,
     sub_domain_names: list[str],
-    insert_operator: InsertOperator = DependsFn.InsertOperator
+    session: AsyncSession = SessionDepends_Commit
 ) -> None:
     """创建不带 Question 的 Domain"""
     model = DomainQuestionBank(domain=domain_name, sub_domains=sub_domain_names)
-    await insert_operator.domain(model=model)
+    await insert_operator.domain(session=session, model=model)
 
 
 @router.post("/domain/{domain_name}")
@@ -69,8 +71,7 @@ async def create_question_batch(
     domain_name: str,
     sub_domain_names: list[str],
     number: int,
-    insert_operator: InsertOperator = DependsFn.InsertOperator,
-    delete_operator: DeleteOperator = DependsFn.DeleteOperator,
+    session: AsyncSession = SessionDepends_Commit
 ):
     """
     调用 LLM 工作流，批量插入 Question。
@@ -84,12 +85,13 @@ async def create_question_batch(
                 number=number
             )
             await insert_operator.question_batch(
+                session=session,
                 domain_name=domain_name,
                 sub_domain_name=sub_domain_name,
                 models=questions,
             )
     except ServiceException as e:
-        await delete_operator.domain_question_bank(domain_name=domain_name)
+        await delete_operator.domain_question_bank(session=session, domain_name=domain_name)
         raise e
 
 
@@ -98,11 +100,12 @@ async def insert_job(
     name: str,
     job_requirements: list[str],
     job_responsibilities: list[str],
-    insert_operator: InsertOperator = DependsFn.InsertOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """创建 job"""
     await insert_operator.job(
-        JobModel(
+        session = session,
+        model = JobModel(
             name=name,
             job_requirements=job_requirements,
             job_responsibilities=job_responsibilities
@@ -113,10 +116,10 @@ async def insert_job(
 @router.put("/cv/{title}")
 async def insert_cv_batch(
     cv: list[CVModel],
-    insert_operator: InsertOperator = DependsFn.InsertOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """批量插入 cv"""
-    await insert_operator.cv_batch(models=cv)
+    await insert_operator.cv_batch(session=session, models=cv)
 
 
 @router.put("/llm/{model}")
@@ -126,11 +129,12 @@ async def insert_llm(
     path: str,
     cost: float = Query(default=0.),
     cost_limit: float = Query(default=1E8),
-    insert_operator: InsertOperator = DependsFn.InsertOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """创建 LLM"""
     await insert_operator.llm(
-        LLMCard(
+        session = session,
+        llm_card = LLMCard(
             model=model,
             is_local=is_local,
             path=path,
@@ -145,11 +149,12 @@ async def insert_interviewer(
     name: str,
     llm_name: str,
     system_prompt: str,
-    insert_operator: InsertOperator = DependsFn.InsertOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """批量插入 CV"""
     await insert_operator.interviewer(
-        InterviewerModel(
+        session = session,
+        model = InterviewerModel(
             name=name,
             model=llm_name,
             system_prompt=system_prompt,
@@ -164,11 +169,12 @@ async def update_job(
     name: str,
     new_job_requirements: list[str],
     new_job_responsibilities: list[str],
-    update_operator: UpdateOperator = DependsFn.UpdateOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """更新一个 job"""
     await update_operator.job(
-        JobModel(
+        session = session,
+        model = JobModel(
             name=name,
             job_requirements=new_job_requirements,
             job_responsibilities=new_job_responsibilities
@@ -180,20 +186,28 @@ async def update_job(
 async def update_llm_cost_limit(
     model: str,
     new_cost_limit: float,
-    update_operator: UpdateOperator = DependsFn.UpdateOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """重置一个 LLM 的 cost"""
-    await update_operator.llm_cost_refresh(model=model, cost_limit=new_cost_limit)
+    await update_operator.llm_cost_refresh(
+        session=session,
+        model=model,
+        cost_limit=new_cost_limit
+    )
 
 
 @router.post("/interview/interviewer/{name}")
 async def update_interviewer_llm(
     name: str,
     new_model_name: str,
-    update_operator: UpdateOperator = DependsFn.UpdateOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """更换 Interviewer 中的模型"""
-    await update_operator.change_interviewer_llm(name=name, new_model_name=new_model_name)
+    await update_operator.change_interviewer_llm(
+        session=session,
+        name=name,
+        new_model_name=new_model_name
+    )
 
 
 # delete data
@@ -202,47 +216,48 @@ async def update_interviewer_llm(
 async def delete_question_bank(
     domain_name: str,
     sub_domain_name: str | None = Query(None),
-    delete_operator: DeleteOperator = DependsFn.DeleteOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """
     删除一个 Domain 对应的领域题库。
     当不传入 `sub_domain_name`，则删除所有 `domain_name` 下的 `sub_domain_name`
     """
     await delete_operator.domain_question_bank(
+        session=session,
         domain_name=domain_name,
         sub_domain_name=sub_domain_name
     )
 
 
 @router.delete("/cv/{title}")
-async def delete_cv(title: str, delete_operator: DeleteOperator = DependsFn.DeleteOperator):
+async def delete_cv(title: str, session: AsyncSession = SessionDepends_Commit):
     """删除一个 CV"""
-    await delete_operator.cv(title=title)
+    await delete_operator.cv(session=session, title=title)
 
 
 @router.delete("/job/{name}")
 async def delete_job(
     name: str,
-    delete_operator: DeleteOperator = DependsFn.DeleteOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """删除一个 job"""
-    await delete_operator.job(name=name)
+    await delete_operator.job(session=session, name=name)
 
 
 @router.delete("/llm/{model}")
 async def delete_llm(
     model: str,
-    delete_operator: DeleteOperator = DependsFn.DeleteOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """删除一个 LLM"""
-    await delete_operator.llm(model=model)
+    await delete_operator.llm(session=session, model=model)
 
 
 @router.delete("/interview/interviewer/{interviewer}")
 async def delete_interviewer(
     interviewer: str,
-    delete_operator: DeleteOperator = DependsFn.DeleteOperator
+    session: AsyncSession = SessionDepends_Commit
 ):
     """删除一个 Interviewer"""
-    await delete_operator.interviewer(name=interviewer)
+    await delete_operator.interviewer(session=session, name=interviewer)
 

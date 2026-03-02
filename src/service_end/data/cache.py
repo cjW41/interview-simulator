@@ -177,7 +177,7 @@ def with_cache_async(cache: DBCache, key_type: KeyType):
     def decorator(fn):
         @wraps(fn)
         async def wrapped_fn(*args, **kwargs):
-            KEY = KeyFactory.get(key_type=key_type, arg_dict=kwargs)
+            KEY = KeyFactory.get(key_type=key_type, **kwargs)
             cache_data = cache.get(KEY)
             if cache_data is not None:
                 data = cache_data

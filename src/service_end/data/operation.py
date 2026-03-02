@@ -1,21 +1,23 @@
 # data.operation
+# 无状态数据库 Operator 类
+# 无需进行手动的 session 上下文管理，交给 fastapi
 from ..exception import ServiceInitException, DatabaseException, TragetRecordNotFound
 from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
 from .cache import DBCache, with_cache_async, KeyType, KeyFactory
 from .orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
-from .utils import VariableEnum, query_one_record, session_scalars, insert_execute, update_execute, delete_execute
+from .utils import VariableEnum, query_one_record, insert_execute, update_execute, delete_execute
 from sqlalchemy import exc, select, insert, update, delete
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 from pathlib import Path
 from collections import defaultdict
 
 try:
     config_path = Path(__file__).parent.parent/"config.yaml"
-    with open(config_path) as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    cache_size = config["cache"]["cache_size"]
-    cache_ttl = config["cache"]["cache_ttl"]
+    with open(config_path, encoding="utf-8") as f:
+        cache_config = yaml.load(f, Loader=yaml.FullLoader)["cache"]
+    cache_size = cache_config["cache_size"]
+    cache_ttl = cache_config["cache_ttl"]
 except KeyError as e:
     raise ServiceInitException(source_class=None, message=f"config key missing: {e}")
 
@@ -47,83 +49,91 @@ class InsertOperator:
     llm(llm_card: LLMCard) -> None
     ```
     """
-    def __init__(self, engine: AsyncEngine):
-        self.engine = engine
 
-    async def domain(self, model: DomainQuestionBank):
+    async def domain(self, session: AsyncSession, model: DomainQuestionBank):
         """创建不带 Question 的 Domain"""
-        async with AsyncSession(bind=self.engine) as session:
-            # 查询当前已有 domain 数量, 加锁
-            dql_stmt = select(Variable).where(Variable.name == VariableEnum.DOMAIN_COUNT).with_for_update()
-            value = await query_one_record(
-                dql_stmt=dql_stmt,
-                session=session,
-                table="variable", filter_condition=f"name={VariableEnum.DOMAIN_COUNT}"
-            )
-            if isinstance(value, dict):
-                domain_count = value["value"]
-            else:
-                message = f"'value' type error: (expected: 'dict', get: '{value.__class__.__name__}')"
-                raise DatabaseException(message)
-            if not isinstance(domain_count, int):
-                message = f"'domain_count' type error: (expected: 'int', get: '{domain_count.__class__.__name__}')"
-                raise DatabaseException(message)
+        # 查询当前已有 domain 数量, 加锁
+        dql_stmt = select(Variable).where(Variable.name == VariableEnum.DOMAIN_COUNT.value).with_for_update()
+        data = await query_one_record(
+            dql_stmt=dql_stmt,
+            session=session,
+            table="variable",
+            filter_condition=f"name={VariableEnum.DOMAIN_COUNT.value}"
+        )
+        domain_count = data.value["value"]  # {"value": number_of_domain}
+        if not isinstance(domain_count, int):
+            message = f"'domain_count' type error: (expected: 'int', got: '{domain_count.__class__.__name__}')"
+            raise DatabaseException(message)
 
-            # 更新 domain_count
-            domain_count += 1
-            dml_stmt = (
-                update(Variable)
-                .where(Variable.name == VariableEnum.DOMAIN_COUNT)
-                .values(value={"value": domain_count})
-            )
-            try:
-                await session.execute(statement=dml_stmt)
-            except exc.SQLAlchemyError as e:
-                await session.rollback()
-                raise DatabaseException(str(e)) from e
+        # 更新 domain_count
+        domain_count += 1
+        dml_stmt = update(Variable).where(Variable.name == VariableEnum.DOMAIN_COUNT.value).values(value={"value": domain_count})
+        await session.execute(statement=dml_stmt)
 
-            # 插入新 domain 记录
-            nrows = len(model.sub_domains)
-            data = [
-                {
-                    "domain_id": domain_count,
-                    "sub_domain_id": idx + 1,
-                    "domain_name": model.domain,
-                    "sub_domain_name": model.sub_domains[idx]
-                }
-                for idx in range(nrows)
-            ]
-            dml_stmt = insert(Domain).values(data)
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="domain")
+        # 插入新 domain 记录
+        nrows = len(model.sub_domains)
+        data = [
+            {
+                "domain_id": domain_count,
+                "sub_domain_id": idx + 1,
+                "domain_name": model.domain,
+                "sub_domain_name": model.sub_domains[idx]
+            }
+            for idx in range(nrows)
+        ]
+        dml_stmt = insert(Domain).values(data)
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="domain")
 
         # 更新缓存
+        # global_cache.batch_update(    
+        #     {
+        #         f"{domain['domain_name']}-{domain['sub_domain_name']}":(domain['domain_id'], domain['sub_domain_id'],)
+        #         for domain in data
+        #     }
+        # )
+
         global_cache.batch_update(    
             {
-                f"{domain['domain_name']}-{domain['sub_domain_name']}":(domain['domain_id'], domain['sub_domain_id'],)
+                KeyFactory.get(
+                    KeyType.DOMAIN_SUBDOMAIN,
+                    domain_name=domain['domain_name'],
+                    sub_domain_name=domain['sub_domain_name']
+                ): (domain['domain_id'], domain['sub_domain_id'],)
                 for domain in data
             }
         )
         global_cache.pop(KeyFactory.get(key_type=KeyType.ALL_DOMAIN_NAME))
 
     @with_cache_async(cache=global_cache, key_type=KeyType.DOMAIN_SUBDOMAIN)
-    async def _get_domain_subdomain_id(self, domain_name: str, sub_domain_name: str,) -> tuple[int, int]:
+    async def _get_domain_subdomain_id(
+            self,
+            session: AsyncSession,
+            domain_name: str,
+            sub_domain_name: str,
+    ) -> tuple[int, int]:
         """获取 `domain_name`,`sub_domain_name` 的 id"""
         dql_stmt = select(Domain).where(
             (Domain.domain_name==domain_name) & (Domain.sub_domain_name==sub_domain_name)
         )
-        async with AsyncSession(bind=self.engine) as session:
-            domain = await query_one_record(
-                dql_stmt=dql_stmt,
-                session=session,
-                table="domain",
-                filter_condition=f"(domain_name={domain_name})&(sub_domain_name={sub_domain_name})"
-            )
+        domain = await query_one_record(
+            dql_stmt=dql_stmt,
+            session=session,
+            table="domain",
+            filter_condition=f"(domain_name={domain_name})&(sub_domain_name={sub_domain_name})"
+        )
         return (domain.domain_id, domain.sub_domain_id,)
 
-    async def question_batch(self, domain_name: str, sub_domain_name: str, models: list[QuestionModel],):
+    async def question_batch(
+            self,
+            session: AsyncSession,
+            domain_name: str,
+            sub_domain_name: str,
+            models: list[QuestionModel]
+    ):
         """批量插入 Question。`domain_name`,`sub_domain_name` 代表 Question 所属领域"""
         # 获取 domain/sub_domain 的 id
         domain_id, sub_domain_id = await self._get_domain_subdomain_id(
+            session=session,
             domain_name=domain_name,
             sub_domain_name=sub_domain_name
         )
@@ -131,40 +141,35 @@ class InsertOperator:
         domain_dict = {"domain_id": domain_id, "sub_domain_id": sub_domain_id}
         data = [dict(**domain_dict, **model.model_dump()) for model in models]
         dml_stmt = insert(Question).values(data)
-        async with AsyncSession(bind=self.engine) as session:
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="question")
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="question")
     
     
-    async def job(self, model: JobModel):
+    async def job(self, session: AsyncSession, model: JobModel):
         """创建 job"""
         data = [model.model_dump()]
         dml_stmt = insert(Job).values(data)
-        async with AsyncSession(bind=self.engine) as session:
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="job")
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="job")
         global_cache.pop(KeyFactory.get(KeyType.ALL_JOB))
 
-    async def cv_batch(self, models: list[CVModel]):
+    async def cv_batch(self, session: AsyncSession, models: list[CVModel]):
         """批量插入 cv"""
         data = [model.model_dump() for model in models]
         dml_stmt = insert(CV).values(data)
-        async with AsyncSession(bind=self.engine) as session:
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="cv")
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="cv")
         global_cache.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
     
-    async def interviewer(self, model: InterviewerModel):
+    async def interviewer(self, session: AsyncSession, model: InterviewerModel):
         """创建 interviewer"""
         data = [model.model_dump()]
-        async with AsyncSession(bind=self.engine) as session:
-            dml_stmt = insert(Interviewer).values(data)
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="interviewer")
+        dml_stmt = insert(Interviewer).values(data)
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="interviewer")
         global_cache.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
 
-    async def llm(self, llm_card: LLMCard):
+    async def llm(self, session: AsyncSession, llm_card: LLMCard):
         """创建 llm"""
         data = [llm_card.model_dump()]
-        async with AsyncSession(bind=self.engine) as session:
-            dml_stmt = insert(LLM).values(data)
-            await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="llm")
+        dml_stmt = insert(LLM).values(data)
+        await insert_execute(dml_stmt=dml_stmt, session=session, data=data, table="llm")
         global_cache.pop(KeyFactory.get(KeyType.ALL_LLM))
 
 
@@ -200,102 +205,100 @@ class GetOperator:
     ```
     """
 
-    def __init__(self, engine: AsyncEngine):
-        self.engine = engine
-
-    async def questions(self, ids: list[int]) -> list[QuestionModel]:
+    async def questions(self, session: AsyncSession, ids: list[int]) -> list[QuestionModel]:
         """从数据库按主键 ID 加载一组 QuestionModel"""
         dql_stmt = select(Question).where(Question.id_.in_(ids))
-        async with AsyncSession(bind=self.engine) as session:
-            try:
-                results = await session.scalars(dql_stmt)
-                results = results.all()
-                if len(results) < len(ids):
-                    not_found_ids = set(ids).difference(set(r.id_ for r in results))
-                    raise TragetRecordNotFound(table="question", filter_condition=f"id={not_found_ids}")
-            except exc.SQLAlchemyError as e:
-                raise DatabaseException(str(e)) from e
+        try:
+            results = await session.scalars(dql_stmt)
+            results = results.all()
+            if len(results) < len(ids):
+                not_found_ids = set(ids).difference(set(r.id_ for r in results))
+                raise TragetRecordNotFound(table="question", filter_condition=f"id={not_found_ids}")
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
         return [QuestionModel.model_validate(q) for q in results]
 
     @with_cache_async(cache=global_cache, key_type=KeyType.ALL_DOMAIN_NAME)
-    async def all_domain_name(self) -> list[str]:
+    async def all_domain_name(self, session: AsyncSession) -> list[str]:
         """当前数据库内已有领域题库的领域名称"""
         dql_stmt = select(Domain.domain_name).distinct()
-        async with AsyncSession(bind=self.engine) as session:
-            results = await session_scalars(session=session, dql_stmt=dql_stmt)
+        try:
+            results = await session.scalars(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
         results = results.all()
         return list(results)
 
     @with_cache_async(cache=global_cache, key_type=KeyType.QUESTION_BANK)
-    async def domain_question_bank(self, domain_name: str) -> DomainQuestionBank:
+    async def domain_question_bank(self, session: AsyncSession, domain_name: str) -> DomainQuestionBank:
         """按照领域名称加载 DomainQuestionBank"""
         # 查询 (id_, sub_domain_name)
         dql_stmt = select(Question.id_, Domain.sub_domain_name).join(Domain).where(Domain.domain_name == domain_name)
-        async with AsyncSession(bind=self.engine) as session:
-            try:
-                result = await session.execute(dql_stmt)
-            except exc.SQLAlchemyError as e:
-                raise DatabaseException(str(e)) from e
+        try:
+            result = await session.execute(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
 
         # 构建 DomainQuestionBank
         question_ids: dict[str, list[int]] = defaultdict(list)
         for row in result.all():
             question_ids[row.sub_domain_name].append(row.id_)
-        data = DomainQuestionBank(
+        return DomainQuestionBank(
             domain=domain_name,
             sub_domains=list(question_ids.keys()),
             question_ids=question_ids
         )
-        return data
 
     @with_cache_async(cache=global_cache, key_type=KeyType.ALL_JOB)
-    async def all_job(self) -> list[JobModel]:
+    async def all_job(self, session: AsyncSession) -> list[JobModel]:
         """查询当前所有 Job"""
         dql_stmt = select(Job)
-        async with AsyncSession(bind=self.engine) as session:
-            result = await session_scalars(session=session, dql_stmt=dql_stmt)
-        data = [JobModel.model_validate(job) for job in result.all()]
-        return data
+        try:
+            results = await session.scalars(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
+        return [JobModel.model_validate(job) for job in results.all()]
 
     @with_cache_async(cache=global_cache, key_type=KeyType.CV_TITLE)
-    async def cv(self, title: str) -> CVModel:
+    async def cv(self, session: AsyncSession, title: str) -> CVModel:
         """查询一个 cv"""
         dql_stmt = select(CV).where(CV.title == title)
-        async with AsyncSession(bind=self.engine) as session:
-            cv: CV = await query_one_record(
-                dql_stmt=dql_stmt,
-                session=session,
-                table="cv", filter_condition=f"title={title}"
-            )
-        data = CVModel.model_validate(cv)
-        return data
+        cv: CV = await query_one_record(
+            dql_stmt=dql_stmt,
+            session=session,
+            table="cv", filter_condition=f"title={title}"
+        )
+        return CVModel.model_validate(cv)
 
     @with_cache_async(cache=global_cache, key_type=KeyType.ALL_CV_TITLE)
-    async def all_cv_titles(self,) -> list[str]:
+    async def all_cv_titles(self, session: AsyncSession) -> list[str]:
         """查询当前所有 cv 的名称"""
         dql_stmt = select(CV.title)
-        async with AsyncSession(bind=self.engine) as session:
-            result = await session_scalars(session=session, dql_stmt=dql_stmt)
-        data = list(result.all())
-        return data
+        try:
+            results = await session.scalars(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
+        return list(results.all())
     
     @with_cache_async(cache=global_cache, key_type=KeyType.ALL_LLM)
-    async def all_llm(self,) -> list[LLMCard]:
+    async def all_llm(self, session: AsyncSession) -> list[LLMCard]:
         """查询当前全部 LLM"""
         dql_stmt = select(LLM)
-        async with AsyncSession(bind=self.engine) as session:
-            result = await session_scalars(session=session, dql_stmt=dql_stmt)
-        data = [LLMCard.model_validate(llm) for llm in result.all()]
-        return data
+        try:
+            results = await session.scalars(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
+        return [LLMCard.model_validate(llm) for llm in results.all()]
 
     @with_cache_async(cache=global_cache, key_type=KeyType.ALL_INTERVIEWER)
-    async def all_interviewer(self,) -> list[InterviewerModel]:
+    async def all_interviewer(self, session: AsyncSession) -> list[InterviewerModel]:
         """查询当前全部 Interviewer"""
         dql_stmt = select(Interviewer)
-        async with AsyncSession(bind=self.engine) as session:
-            result = await session_scalars(session=session, dql_stmt=dql_stmt)
-        data = [InterviewerModel.model_validate(interviewer) for interviewer in result]
-        return data
+        try:
+            results = await session.scalars(dql_stmt)
+        except exc.SQLAlchemyError as e:
+            raise DatabaseException(str(e)) from e
+        return [InterviewerModel.model_validate(interviewer) for interviewer in results.all()]
 
 
 class UpdateOperator:
@@ -315,44 +318,34 @@ class UpdateOperator:
     ```
     """
 
-    def __init__(self, engine: AsyncEngine):
-        self.engine = engine
-
-    async def job(self, model: JobModel):
+    async def job(self, session: AsyncSession, model: JobModel):
         """更新一个 job"""
         value = model.model_dump()
         dml_stmt = update(Job).where(Job.name == model.name).values(**value)
-        async with AsyncSession(bind=self.engine) as session:
-            await update_execute(
-                session=session,
-                dml_stmt=dml_stmt,
-                table="job", filter_condition=f"name={model.name}", value=value,
-            )
+        await update_execute(
+            session=session,
+            dml_stmt=dml_stmt,
+            table="job", filter_condition=f"name={model.name}", value=value,
+        )
 
-    async def llm_cost_refresh(self, model: str, cost_limit: float):
+    async def llm_cost_refresh(self, session: AsyncSession, model: str, cost_limit: float):
         """更新大模型计费"""
         value = {"cost": 0., "cost_limit": cost_limit}
         dml_stmt = update(LLM).where(LLM.model == model).values(**value)
-        async with AsyncSession(bind=self.engine) as session:
-            await update_execute(
-                session=session,
-                dml_stmt=dml_stmt,
-                table="llm", filter_condition=f"cost=0, cost_limit={cost_limit}", value=value,
-            )
-
-    async def change_interviewer_llm(self, name: str, new_model_name: str):
-        """更新 Interviewer 中的模型名称"""
-        dml_stmt = (
-            update(Interviewer)
-            .where(Interviewer.name == name)
-            .values(model=new_model_name)
+        await update_execute(
+            session=session,
+            dml_stmt=dml_stmt,
+            table="llm", filter_condition=f"cost=0, cost_limit={cost_limit}", value=value,
         )
-        async with AsyncSession(bind=self.engine) as session:
-            await update_execute(
-                session=session,
-                dml_stmt=dml_stmt,
-                table="interviewer", filter_condition=f"name={name}", value={"model": new_model_name}
-            )
+
+    async def change_interviewer_llm(self, session: AsyncSession, name: str, new_model_name: str):
+        """更新 Interviewer 中的模型名称"""
+        dml_stmt = update(Interviewer).where(Interviewer.name == name).values(model=new_model_name)
+        await update_execute(
+            session=session,
+            dml_stmt=dml_stmt,
+            table="interviewer", filter_condition=f"name={name}", value={"model": new_model_name}
+        )
 
 
 class DeleteOperator:
@@ -378,11 +371,7 @@ class DeleteOperator:
     ```
     """
 
-    def __init__(self, engine: AsyncEngine):
-        self.engine = engine
-
-
-    async def domain_question_bank(self, domain_name: str, sub_domain_name: str | None = None):
+    async def domain_question_bank(self, session: AsyncSession, domain_name: str, sub_domain_name: str | None = None):
         """通过外键级联删除机制删除一个 Domain 对应的领域题库"""
         dml_stmt = delete(Domain)
         if sub_domain_name is None:
@@ -394,8 +383,8 @@ class DeleteOperator:
                     (Domain.domain_name == domain_name) & (Domain.sub_domain_name == sub_domain_name)
                 )
             )
-        async with AsyncSession(bind=self.engine) as session:
-            await delete_execute(session=session, dml_stmt=dml_stmt)
+        await delete_execute(session=session, dml_stmt=dml_stmt)
+
         global_cache.pop(
             KeyFactory.get(
                 KeyType.DOMAIN_SUBDOMAIN,
@@ -406,33 +395,33 @@ class DeleteOperator:
         global_cache.pop(KeyFactory.get(KeyType.ALL_DOMAIN_NAME))
         
     
-    async def cv(self, title: str):
+    async def cv(self, session: AsyncSession, title: str):
         """删除一个 cv"""
         dml_stmt = delete(CV).where(CV.title == title)
-        async with AsyncSession(bind=self.engine) as session:
-            await delete_execute(session=session, dml_stmt=dml_stmt)
+        await delete_execute(session=session, dml_stmt=dml_stmt)
         global_cache.pop(KeyFactory.get(KeyType.CV_TITLE, title=title))
         global_cache.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
 
-    async def job(self, name: str):
+    async def job(self, session: AsyncSession, name: str):
         """删除一个 job"""
         dml_stmt = delete(Job).where(Job.name == name)
-        async with AsyncSession(bind=self.engine) as session:
-            await delete_execute(session=session, dml_stmt=dml_stmt)
+        await delete_execute(session=session, dml_stmt=dml_stmt)
         global_cache.pop(KeyFactory.get(KeyType.ALL_JOB))
 
-    async def llm(self, model: str):
+    async def llm(self, session: AsyncSession, model: str):
         """删除一个 llm"""
         dml_stmt = delete(LLM).where(LLM.model == model)
-        async with AsyncSession(bind=self.engine) as session:
-            await delete_execute(session=session, dml_stmt=dml_stmt)
+        await delete_execute(session=session, dml_stmt=dml_stmt)
         global_cache.pop(KeyFactory.get(KeyType.ALL_LLM))
     
-    async def interviewer(self, name: str):
+    async def interviewer(self, session: AsyncSession, name: str):
         """删除一个 interviewer"""
         dml_stmt = delete(Interviewer).where(Interviewer.name == name)
-        async with AsyncSession(bind=self.engine) as session:
-            await delete_execute(session=session, dml_stmt=dml_stmt)
+        await delete_execute(session=session, dml_stmt=dml_stmt)
         global_cache.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
 
 
+insert_operator = InsertOperator()
+get_operator = GetOperator()
+update_operator = UpdateOperator()
+delete_operator = DeleteOperator()

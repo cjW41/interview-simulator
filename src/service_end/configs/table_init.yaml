@@ -1,0 +1,9 @@
+# data.__init__
+url:
+  user: "simu"
+  pwd: "simu123456"
+  host: "localhost"
+  port: 5432
+  db: "simu"
+target_schema: "simu"
+clear_exists: True

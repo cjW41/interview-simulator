@@ -34,7 +34,7 @@ class KeyFactory:
     def get(cls, key_type: KeyType, **kwargs) -> str:
         """生产缓存键。键内参数通过 `kwargs` 传入"""
         getter = cls._method_router(key_type=key_type)
-        arg_name_set = set(inspect.signature(getter).parameters.keys())
+        arg_name_set = set(inspect.signature(getter).parameters.keys())  # getter 参数名称集合
         if arg_name_set <= set(kwargs.keys()):
             return getter(
                 **{k: kwargs[k] for k in arg_name_set}

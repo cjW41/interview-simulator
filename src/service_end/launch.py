@@ -1,4 +1,4 @@
-# 对于 psycopg 生效
+# # 当使用 psycopg 时
 # import sys
 # if sys.platform == "win32":
 #     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
 def main():
     """服务端启动入口"""
     # 读取启动配置
-    config_path = Path(__file__).parent/"config.yaml"
+    config_path = Path(__file__).parent/"configs/config.yaml"
     with open(config_path, encoding="utf-8") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         app_config = config["app"]

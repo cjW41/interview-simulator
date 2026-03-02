@@ -1,3 +1,19 @@
+"""
+ExceptionBase
+    - ServiceExceptionBase
+        - ServiceInitException
+        - DatabaseException
+            - QueryError
+            - InsertError
+            - UpdateError
+            - DeleteError
+        - DBCacheError
+        - ServiceErrorBase
+    - UserExceptionBase
+        - UploadError
+"""
+
+
 import time
 
 
@@ -7,13 +23,13 @@ class ExceptionBase(Exception):
         self.timestamp = time.time()
 
 
-class ServiceException(ExceptionBase):
+class ServiceExceptionBase(ExceptionBase):
     """服务端异常基类"""
     def __init__(self):
         super().__init__()
 
 
-class ServiceInitException(ServiceException):
+class ServiceInitException(ServiceExceptionBase):
     """服务端启动异常"""
     def __init__(self, source_class: str | None, message: str):
         super().__init__()
@@ -24,8 +40,8 @@ class ServiceInitException(ServiceException):
         return f"source: {self.source_class}, message: {self.message}"
 
 
-class DatabaseException(ServiceException):
-    """数据库异常基类"""
+class DatabaseException(ServiceExceptionBase):
+    """service_end.data 异常基类"""
     def __init__(self, *messages: str):
         super().__init__()
         self.messages = messages
@@ -33,7 +49,7 @@ class DatabaseException(ServiceException):
     def __str__(self) -> str:
         return " ".join(self.messages)
 
-class TragetRecordNotFound(DatabaseException):
+class QueryError(DatabaseException):
     """调用 DQL 语句时未找到目标记录"""
     def __init__(self, table: str, filter_condition: str):
         super().__init__()
@@ -69,7 +85,7 @@ class UpdateError(DatabaseException):
         return f"source: {self.source_class}, table: {self.table}, filter: {self.filter_condition}, value: {self.value}"
 
 
-class DBCacheError(ServiceException):
+class DBCacheError(ServiceExceptionBase):
     """DBCache 产生的异常"""
     def __init__(self, message: str):
         super().__init__()
@@ -79,13 +95,18 @@ class DBCacheError(ServiceException):
         return self.message
 
 
-class UserException(ExceptionBase):
+class ServiceErrorBase(ServiceExceptionBase):
+    """service_end.service 模块内异常基类"""
+
+
+
+class UserExceptionBase(ExceptionBase):
     """用户端异常基类"""
     def __init__(self):
         super().__init__()
 
 
-class UploadError(UserException):
+class UploadError(UserExceptionBase):
     """用户上传文件异常"""
     def __init__(self):
         super().__init__()

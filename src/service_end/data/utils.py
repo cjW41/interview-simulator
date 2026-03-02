@@ -1,5 +1,5 @@
 # data.utils
-from ..exception import TragetRecordNotFound, DatabaseException, InsertError, UpdateError
+from ..exception import QueryError, DatabaseException, InsertError, UpdateError
 from enum import Enum
 from typing import TypeVar
 from sqlalchemy import exc, Select, Insert, Update, Delete
@@ -29,17 +29,13 @@ async def query_one_record(
         dql_stmt: Select statement
         table: 表名，用于异常记录
         filter_condition: 查询过滤条件，用于异常记录
-    
-    Exceptions:
-        TragetRecordNotFound: 查询失败, from NoResultFound
-        DatabaseException: 其它来自 SQLAlchemy 的异常
     """
     try:
         result = await session.execute(statement=dql_stmt)
         record = result.scalar_one()
         return record
     except exc.NoResultFound as e:
-        raise TragetRecordNotFound(
+        raise QueryError(
             table=table, filter_condition=filter_condition
         ) from e
     except exc.SQLAlchemyError as e:

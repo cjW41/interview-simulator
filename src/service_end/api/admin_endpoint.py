@@ -1,4 +1,4 @@
-from ..exception import ServiceException
+from ..exception import ServiceExceptionBase
 from ..data import db, insert_operator, get_operator, update_operator, delete_operator
 from ..data.model import JobModel, CVModel, LLMCard, InterviewerModel, DomainQuestionBank
 from ..service import question_gen_workflow
@@ -90,7 +90,7 @@ async def create_question_batch(
                 sub_domain_name=sub_domain_name,
                 models=questions,
             )
-    except ServiceException as e:
+    except ServiceExceptionBase as e:
         await delete_operator.domain_question_bank(session=session, domain_name=domain_name)
         raise e
 

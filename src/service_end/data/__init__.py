@@ -8,9 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 import yaml
 from pathlib import Path
 
-config_path = Path(__file__).parent.parent/"config.yaml"
+config_path = Path(__file__).parent.parent/"configs/config.yaml"
 with open(config_path, encoding="utf-8") as f:
-    config = yaml.load(f, Loader=yaml.FullLoader)["table_init"]
+    config = yaml.load(f, Loader=yaml.FullLoader)
 
 SERVER_DRIVER = "asyncpg"
 

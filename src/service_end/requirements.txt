@@ -1,0 +1,21 @@
+Python 3.11.14
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.12.1
+asyncpg==0.31.0
+click==8.3.1
+colorama==0.4.6
+fastapi==0.135.1
+greenlet @ file:///C:/miniconda3/conda-bld/greenlet_1757405600117/work
+h11==0.16.0
+idna==3.11
+packaging @ file:///C:/miniconda3/conda-bld/packaging_1761049096285/work
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-multipart==0.0.22
+PyYAML==6.0.3
+SQLAlchemy @ file:///C:/Users/task_176830323379307/croot/sqlalchemy_1768303361220/work
+starlette==0.52.1
+typing-inspection==0.4.2
+typing_extensions @ file:///C:/b/abs_ecq8gc0vbm/croot/typing_extensions_1756281142218/work
+uvicorn==0.41.0

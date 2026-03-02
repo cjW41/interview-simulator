@@ -1,7 +1,7 @@
 # data.operation
 # 无状态数据库 Operator 类
 # 无需进行手动的 session 上下文管理，交给 fastapi
-from ..exception import ServiceInitException, DatabaseException, TragetRecordNotFound
+from ..exception import ServiceInitException, DatabaseException, QueryError
 from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
 from .cache import DBCache, with_cache_async, KeyType, KeyFactory
 from .orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
@@ -13,9 +13,9 @@ from pathlib import Path
 from collections import defaultdict
 
 try:
-    config_path = Path(__file__).parent.parent/"config.yaml"
+    config_path = Path(__file__).parent.parent/"configs/db_cache.yaml"
     with open(config_path, encoding="utf-8") as f:
-        cache_config = yaml.load(f, Loader=yaml.FullLoader)["cache"]
+        cache_config = yaml.load(f, Loader=yaml.FullLoader)
     cache_size = cache_config["cache_size"]
     cache_ttl = cache_config["cache_ttl"]
 except KeyError as e:
@@ -213,7 +213,7 @@ class GetOperator:
             results = results.all()
             if len(results) < len(ids):
                 not_found_ids = set(ids).difference(set(r.id_ for r in results))
-                raise TragetRecordNotFound(table="question", filter_condition=f"id={not_found_ids}")
+                raise QueryError(table="question", filter_condition=f"id={not_found_ids}")
         except exc.SQLAlchemyError as e:
             raise DatabaseException(str(e)) from e
         return [QuestionModel.model_validate(q) for q in results]

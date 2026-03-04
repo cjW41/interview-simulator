@@ -24,28 +24,33 @@
 
 ```
 service_end
-    ├── launch.py            # 服务端启动入口
-    ├── exception.py         # 服务端异常
-    ├── configs              # yaml 配置文件
-    │   ├── app.yaml         # app 启动
-    │   ├── db_cache.yaml    # 数据库缓存
-    │   └── table_init.yaml  # 数据库创建
-    ├── data                 # 数据模型、数据库模块
-    │   ├── __init__.py      # 数据库初始化，DataBaseManager
+    ├── launch.py              # 服务端启动入口
+    ├── exception.py           # 服务端异常
+    ├── log.py                 # 日志记录器
+    ├── configs                # 配置读取
+    │   ├── __init__.py
+    │   ├── config.yaml        # 配置文件
+    │   └── log_path.yaml      # 日志路径
+    ├── api                    # api 相关模块
+    │   ├── __init__.py
+    │   ├── handler.py         # app exception_handler
+    │   ├── admin_endpoint.py  # 管理端 Endpoint (待整合工作流，待测试)
+    │   └── user_endpoint.py   # 用户端 Endpoint (待开发)
+    ├── data                   # 数据模型、数据库模块
+    │   ├── __init__.py        # 数据库初始化，DataBaseManager
     │   ├── utils.py
-    │   ├── cache.py         # 数据库读取缓存
-    │   ├── model.py         # Pydantic 数据模型
-    │   ├── orm.py           # SQLAlchemy ORM 类
-    │   └── operation.py     # 数据操作 API
-    └── service              # 服务
-        ├── parse_cv.py      # 简历结构化提取 (待开发)
-        ├── question_gen.py  # 面试问题生成 (待开发)
-        └── interview        # 面试支持模块 (待开发)
+    │   ├── cache.py           # 数据库读取缓存
+    │   ├── model.py           # Pydantic 数据模型
+    │   ├── orm.py             # SQLAlchemy ORM 类
+    │   └── operation.py       # 数据操作 API
+    └── service                # 服务
+        ├── parse_cv.py        # 简历结构化提取 (待开发)
+        ├── question_gen.py    # 面试问题生成 (待开发)
+        └── interview          # 面试支持模块 (待开发)
 ```
 
 # 3. 开发计划
 
-- 服务端日志与异常处理框架开发
-- 简历结构化提取 & 面试问题生成
+- 简历结构化提取 & 面试问题生成 workflow
 - 管理端封装
 - 用户端 + 面试支持模块协同开发

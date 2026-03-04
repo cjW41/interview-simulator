@@ -45,54 +45,54 @@ class KeyFactory:
     @classmethod
     def _method_router(cls, key_type: KeyType) -> Callable[..., str]:
         if key_type == KeyType.DOMAIN_SUBDOMAIN:
-            return cls._get_domain_subdomain
+            return cls.__get_domain_subdomain
         elif key_type == KeyType.CV_TITLE:
-            return cls._get_cv_title
+            return cls.__get_cv_title
         elif key_type == KeyType.QUESTION_BANK:
-            return cls._get_question_bank
+            return cls.__get_question_bank
         elif key_type == KeyType.ALL_DOMAIN_NAME:
-            return cls._get_all_domain_name
+            return cls.__get_all_domain_name
         elif key_type == KeyType.ALL_JOB:
-            return cls._get_all_job
+            return cls.__get_all_job
         elif key_type == KeyType.ALL_CV_TITLE:
-            return cls._get_all_cv_title
+            return cls.__get_all_cv_title
         elif key_type == KeyType.ALL_LLM:
-            return cls._get_all_llm
+            return cls.__get_all_llm
         elif key_type == KeyType.ALL_INTERVIEWER:
-            return cls._get_all_interviewer
+            return cls.__get_all_interviewer
         else:
             raise DBCacheError(f"invalid key type: {key_type}")
 
     @classmethod
-    def _get_domain_subdomain(cls, domain_name: str, sub_domain_name: str) -> str:
+    def __get_domain_subdomain(cls, domain_name: str, sub_domain_name: str) -> str:
         return f"{domain_name}-{sub_domain_name}"
 
     @classmethod
-    def _get_cv_title(cls, title: str) -> str:
+    def __get_cv_title(cls, title: str) -> str:
         return f"CV-{title}"
 
     @classmethod
-    def _get_question_bank(cls, domain_name: str) -> str:
+    def __get_question_bank(cls, domain_name: str) -> str:
         return f"QUESTION_BANK_{domain_name}"
 
     @classmethod
-    def _get_all_domain_name(cls) -> str:
+    def __get_all_domain_name(cls) -> str:
         return "ALL_DOMAIN_NAME"
 
     @classmethod
-    def _get_all_job(cls) -> str:
+    def __get_all_job(cls) -> str:
         return "ALL_JOB"
 
     @classmethod
-    def _get_all_cv_title(cls) -> str:
+    def __get_all_cv_title(cls) -> str:
         return "ALL_CV_TITLE"
 
     @classmethod
-    def _get_all_llm(cls) -> str:
+    def __get_all_llm(cls) -> str:
         return "ALL_LLM"
 
     @classmethod
-    def _get_all_interviewer(cls) -> str:
+    def __get_all_interviewer(cls) -> str:
         return "ALL_INTERVIEWER"
 
 
@@ -125,15 +125,15 @@ class DBCache:
         self.size = max(size, 1)
         self.cache: OrderedDict[str, tuple[float, Any]] = OrderedDict()
 
-    def _check_alive(self, create_timestamp: float) -> bool:
+    def __check_alive(self, create_timestamp: float) -> bool:
         """缓存有效性检查"""
         return time.time() - create_timestamp < self.ttl
     
-    def _check_alive_and_remove(self):
+    def __check_alive_and_remove(self):
         """检查全部缓存数据有效性, 移除无效数据"""
         keys = list(self.cache.keys())
         for key in keys:
-            if not self._check_alive(self.cache[key][0]):
+            if not self.__check_alive(self.cache[key][0]):
                 self.cache.pop(key)
     
     def get(self, key: str,) -> Any | None:
@@ -143,7 +143,7 @@ class DBCache:
         value = self.cache.get(key)
         if value is not None:
             create_timestamp, data = value
-            if self._check_alive(create_timestamp):
+            if self.__check_alive(create_timestamp):
                 return data
             else:
                 self.cache.pop(key)
@@ -152,14 +152,14 @@ class DBCache:
     def update(self, key: str, value: Any, check_alive: bool = True) -> None:
         """创建/更新一组缓存"""
         if check_alive:
-            self._check_alive_and_remove()
+            self.__check_alive_and_remove()
         if len(self.cache) >= self.size:
             self.cache.popitem(last=False)  # FIFO
         self.cache[key] = (time.time(), value,)
 
     def batch_update(self, data: dict) -> None:
         """创建/更新一批缓存"""
-        self._check_alive_and_remove()
+        self.__check_alive_and_remove()
         for k, v in data.items():
             self.update(key=k, value=v, check_alive=False)
 

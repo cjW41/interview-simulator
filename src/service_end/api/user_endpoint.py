@@ -26,9 +26,9 @@ async def upload_cv(
         bytes_content = await cv_file.read()
         content = bytes_content.decode("utf-8")
     except AssertionError as e:
-        raise UploadError() from e
+        raise UploadError(message="file name or type incorrect", file_name=str(cv_file.filename)) from e
     except UnicodeDecodeError as e:
-        raise UploadError() from e
+        raise UploadError(message="unicode decode error", file_name=str(cv_file.filename)) from e
     
     # 解析
     cv = await parse_cv_workflow(cv_str=content, title=title)

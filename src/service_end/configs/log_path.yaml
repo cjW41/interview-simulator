@@ -1,0 +1,3 @@
+log_root: ".log"  # 日志根目录
+common_log: "service_common.log"  # 服务端异常堆栈日志，一个文件是一个堆栈
+error_log: "service_error.log"  # 服务端异常日志

@@ -5,22 +5,20 @@ from ..exception import ServiceInitException, DatabaseException
 from sqlalchemy import inspect, text, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.exc import SQLAlchemyError
-import yaml
-from pathlib import Path
-
-config_path = Path(__file__).parent.parent/"configs/config.yaml"
-with open(config_path, encoding="utf-8") as f:
-    config = yaml.load(f, Loader=yaml.FullLoader)
 
 SERVER_DRIVER = "asyncpg"
 
-def ensemble_engine_url(user: str, pwd: str, host: str, port: int, db: str):
-    return f"postgresql+{SERVER_DRIVER}://{user}:{pwd}@{host}:{port}/{db}"
 
-
-engine_url=ensemble_engine_url(**config["url"])
-target_schema=config["target_schema"]
-clear_exists=config["clear_exists"]
+try:
+    def ensemble_engine_url(user: str, pwd: str, host: str, port: int, db: str):
+        return f"postgresql+{SERVER_DRIVER}://{user}:{pwd}@{host}:{port}/{db}"
+    
+    from ..configs import DATA_CONFIG
+    target_schema=DATA_CONFIG["target_schema"]
+    clear_exists=DATA_CONFIG["clear_exists"]
+    engine_url = ensemble_engine_url(**DATA_CONFIG["url"])
+except KeyError as e:
+    raise ServiceInitException(source_class=None, message=f"config key missing: {e}")
 
 
 class DataBaseManager:
@@ -72,22 +70,17 @@ class DataBaseManager:
 db = DataBaseManager()
 db.initiate(engine=create_async_engine(url=engine_url))
 
-async def _init_variable_table(session: AsyncSession) -> None:
+async def __init_variable_table(session: AsyncSession) -> None:
     """insert data into Variable"""
     data = [
         {"name": k, "value": {"value": v}}
         for k, v in VariableInitialDict.items()
     ]
     dml_stmt = insert(Variable).values(data)
-    await insert_execute(
-        session=session,
-        dml_stmt=dml_stmt,
-        table=Variable.__tablename__,
-        data=data
-    )
+    await insert_execute(session=session, dml_stmt=dml_stmt, table="variable")
 
 
-async def _execute_clear(session: AsyncSession) -> None:
+async def __execute_clear(session: AsyncSession) -> None:
     """在 clear_exists=True 时，先删表再创建"""
     conn = await session.connection()
     # 普通表
@@ -96,10 +89,10 @@ async def _execute_clear(session: AsyncSession) -> None:
     # Variable
     await conn.run_sync(Base2.metadata.drop_all)
     await conn.run_sync(Base2.metadata.create_all)
-    await _init_variable_table(session=session)
+    await __init_variable_table(session=session)
 
 
-async def _execute_not_clear(session: AsyncSession) -> None:
+async def __execute_not_clear(session: AsyncSession) -> None:
     """在 clear_exists=True 时，只创建不存在的表"""
     conn = await session.connection()
     # 普通表
@@ -108,7 +101,7 @@ async def _execute_not_clear(session: AsyncSession) -> None:
     inspector = await conn.run_sync(inspect)
     if not inspector.has_table(table_name="variable"):
         await conn.run_sync(Base2.metadata.create_all)
-        await _init_variable_table(session=session)
+        await __init_variable_table(session=session)
 
 
 async def table_init():
@@ -141,9 +134,9 @@ async def table_init():
         # 执行创建
         try:
             if clear_exists:
-                await _execute_clear(session=session)
+                await __execute_clear(session=session)
             else:
-                await _execute_not_clear(session=session)
+                await __execute_not_clear(session=session)
         except SQLAlchemyError as e:
             raise ServiceInitException(source_class=e.__class__.__name__, message=str(e)) from e
 

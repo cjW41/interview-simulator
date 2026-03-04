@@ -1,0 +1,36 @@
+# !! app&fastapi 两个最外层 key 不可为空!!
+# 日志配置参数
+log:
+  clear_when_start: True  # 启动服务时清理掉旧日志
+  interval: 1  # 日期轮转参数，一天一个文件
+  time_backupCount: 7  # 7 天 7 个文件
+  maxMB: 10  # 文件轮转，单位 MB 需要在程序中换算
+  file_backupCount: 2  # 2 个文件轮转
+
+# launch
+run:
+  # uvicorn.run 参数
+  app:
+    reload: True
+    host: "0.0.0.0"
+    port: 8000
+  # FastAPI 初始化参数
+  fastapi:
+    title: "service-end"
+
+# data.operation
+cache:
+  cache_size: 100
+  cache_ttl: 3600
+
+# data.__init__
+data:
+  url:
+    user: "simu"
+    pwd: "simu123456"
+    host: "localhost"
+    port: 5432
+    db: "simu"
+  target_schema: "simu"
+  clear_exists: True
+

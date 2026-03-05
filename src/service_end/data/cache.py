@@ -1,4 +1,4 @@
-from ..exception import DBCacheError
+from ..exception import DBCacheError, ServiceInitException
 import time
 import inspect
 from collections import OrderedDict
@@ -169,21 +169,30 @@ class DBCache:
             self.cache.pop(key)
 
 
-def with_cache_async(cache: DBCache, key_type: KeyType):
+try:
+    from ..configs import CACHE_CONFIG
+    GLOBAL_CACHE = DBCache(size=CACHE_CONFIG["cache_size"], ttl=CACHE_CONFIG["cache_ttl"])
+except KeyError as e:
+    raise ServiceInitException(source_class=None, message=f"config key missing: {e}")
+
+
+def with_cache_async(key_type: KeyType):
     """
-    缓存创建方法装饰器。当缓存中不存在指定数据时调用被装饰函数创建后返回，否则直接返回缓存数据。
-    注意：用于构建缓存键的参数必须以关键字形式传入。
+    函数返回结果缓存装饰器。
+    
+    当缓存中不存在指定数据时，调用被装饰函数创建对象后返回，否则直接返回缓存数据。
+    注意：缓存键参数必须以关键字形式从被装饰函数传入。
     """
     def decorator(fn):
         @wraps(fn)
         async def wrapped_fn(*args, **kwargs):
             KEY = KeyFactory.get(key_type=key_type, **kwargs)
-            cache_data = cache.get(KEY)
+            cache_data = GLOBAL_CACHE.get(KEY)
             if cache_data is not None:
                 data = cache_data
             else:
                 data = await fn(*args, **kwargs)
-                cache.update(key=KEY, value=data)
+                GLOBAL_CACHE.update(key=KEY, value=data)
             return data
         return wrapped_fn
     return decorator

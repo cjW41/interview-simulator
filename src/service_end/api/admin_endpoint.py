@@ -1,5 +1,6 @@
 from ..exception import ServiceEndExceptionBase
-from ..data import db, insert_operator, get_operator, update_operator, delete_operator
+from ..data import db
+from ..data.operation import insert_operator, get_operator, update_operator, delete_operator
 from ..data.model import JobModel, CVModel, LLMCard, InterviewerModel, DomainQuestionBank
 from ..service import question_gen_workflow
 from sqlalchemy.ext.asyncio import AsyncSession

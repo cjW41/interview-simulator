@@ -1,5 +1,4 @@
 from .orm import Base, Base2, Variable
-from .operation import insert_operator, get_operator, update_operator, delete_operator
 from .utils import VariableInitialDict, insert_execute
 from ..exception import ServiceInitException, DatabaseException
 from sqlalchemy import inspect, text, insert
@@ -65,10 +64,10 @@ class DataBaseManager:
         async with self.session_maker() as session:
             yield session  # 开始事务
 
-
 # 全局唯一实例
 db = DataBaseManager()
 db.initiate(engine=create_async_engine(url=engine_url))
+
 
 async def __init_variable_table(session: AsyncSession) -> None:
     """insert data into Variable"""
@@ -148,7 +147,4 @@ async def table_init():
             raise DatabaseException(f"error while session commit: {str(e)}")
 
 
-__all__ = [
-    "table_init", "engine_url", "db",  # 服务端启动
-    "insert_operator", "get_operator", "update_operator", "delete_operator",  # APIRouter 调用
-]
+__all__ = [ "db", "table_init"] # 服务端启动

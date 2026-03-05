@@ -1,19 +1,13 @@
 # data.operation
 # 无状态数据库 Operator 类
 # 无需进行手动的 session 上下文管理，交给 fastapi
-from ..exception import ServiceInitException, QueryError, TargetedRecordNotFound, UpdateEmpty
+from .cache import with_cache_async, GLOBAL_CACHE, KeyType, KeyFactory
+from ..exception import QueryError, TargetedRecordNotFound, UpdateEmpty
 from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
-from .cache import DBCache, with_cache_async, KeyType, KeyFactory
 from .orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
 from .utils import VariableEnum, query_one_record, insert_execute, update_execute, delete_execute, check_empty
 from sqlalchemy import exc, select, insert, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-
-try:
-    from ..configs import CACHE_CONFIG
-    global_cache = DBCache(size=CACHE_CONFIG["cache_size"], ttl=CACHE_CONFIG["cache_ttl"])
-except KeyError as e:
-    raise ServiceInitException(source_class=None, message=f"config key missing: {e}")
 
 
 class InsertOperator:
@@ -78,7 +72,7 @@ class InsertOperator:
         await insert_execute(dml_stmt=dml_stmt, session=session, table=Domain.__tablename__)
 
         # 更新缓存
-        global_cache.batch_update(    
+        GLOBAL_CACHE.batch_update(    
             {
                 KeyFactory.get(
                     KeyType.DOMAIN_SUBDOMAIN,
@@ -88,12 +82,9 @@ class InsertOperator:
                 for domain in data
             }
         )
-        global_cache.pop(KeyFactory.get(key_type=KeyType.ALL_DOMAIN_NAME))
+        GLOBAL_CACHE.pop(KeyFactory.get(key_type=KeyType.ALL_DOMAIN_NAME))
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.DOMAIN_SUBDOMAIN
-    )
+    @with_cache_async(key_type=KeyType.DOMAIN_SUBDOMAIN)
     async def _get_domain_subdomain_id(
             self,
             session: AsyncSession,
@@ -136,28 +127,28 @@ class InsertOperator:
         data = [model.model_dump()]
         dml_stmt = insert(Job).values(data)
         await insert_execute(session=session, dml_stmt=dml_stmt, table=Job.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_JOB))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_JOB))
 
     async def cv_batch(self, session: AsyncSession, models: list[CVModel]):
         """批量插入 cv"""
         data = [model.model_dump() for model in models]
         dml_stmt = insert(CV).values(data)
         await insert_execute(session=session, dml_stmt=dml_stmt, table=CV.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
     
     async def interviewer(self, session: AsyncSession, model: InterviewerModel):
         """创建 interviewer"""
         data = [model.model_dump()]
         dml_stmt = insert(Interviewer).values(data)
         await insert_execute(session=session, dml_stmt=dml_stmt, table=Interviewer.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
 
     async def llm(self, session: AsyncSession, llm_card: LLMCard):
         """创建 llm"""
         data = [llm_card.model_dump()]
         dml_stmt = insert(LLM).values(data)
         await insert_execute(session=session, dml_stmt=dml_stmt, table=LLM.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_LLM))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_LLM))
 
 
 class GetOperator:
@@ -212,10 +203,7 @@ class GetOperator:
             )
         return [QuestionModel.model_validate(q) for q in results]
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.ALL_DOMAIN_NAME
-    )
+    @with_cache_async(key_type=KeyType.ALL_DOMAIN_NAME)
     async def all_domain_name(self, session: AsyncSession) -> list[str]:
         """当前数据库内已有领域题库的领域名称"""
         dql_stmt = select(Domain.domain_name).distinct()
@@ -230,10 +218,7 @@ class GetOperator:
         results = results.all()
         return list(results)
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.QUESTION_BANK
-    )
+    @with_cache_async(key_type=KeyType.QUESTION_BANK)
     async def domain_question_bank(self, session: AsyncSession, domain_name: str) -> DomainQuestionBank:
         """按照领域名称加载 DomainQuestionBank"""
         from collections import defaultdict
@@ -259,10 +244,7 @@ class GetOperator:
             question_ids=question_ids
         )
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.ALL_JOB
-    )
+    @with_cache_async(key_type=KeyType.ALL_JOB)
     async def all_job(self, session: AsyncSession) -> list[JobModel]:
         """查询当前所有 Job"""
         dql_stmt = select(Job)
@@ -276,10 +258,7 @@ class GetOperator:
             ) from e
         return [JobModel.model_validate(job) for job in results.all()]
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.CV_TITLE
-    )
+    @with_cache_async(key_type=KeyType.CV_TITLE)
     async def cv(self, session: AsyncSession, title: str) -> CVModel:
         """查询一个 cv"""
         dql_stmt = select(CV).where(CV.title == title)
@@ -290,10 +269,7 @@ class GetOperator:
         )
         return CVModel.model_validate(cv)
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.ALL_CV_TITLE
-    )
+    @with_cache_async(key_type=KeyType.ALL_CV_TITLE)
     async def all_cv_titles(self, session: AsyncSession) -> list[str]:
         """查询当前所有 cv 的名称"""
         dql_stmt = select(CV.title)
@@ -307,10 +283,7 @@ class GetOperator:
             ) from e
         return list(results.all())
     
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.ALL_LLM
-    )
+    @with_cache_async(key_type=KeyType.ALL_LLM)
     async def all_llm(self, session: AsyncSession) -> list[LLMCard]:
         """查询当前全部 LLM"""
         dql_stmt = select(LLM)
@@ -324,10 +297,7 @@ class GetOperator:
             ) from e
         return [LLMCard.model_validate(llm) for llm in results.all()]
 
-    @with_cache_async(
-        cache=global_cache,
-        key_type=KeyType.ALL_INTERVIEWER
-    )
+    @with_cache_async(key_type=KeyType.ALL_INTERVIEWER)
     async def all_interviewer(self, session: AsyncSession) -> list[InterviewerModel]:
         """查询当前全部 Interviewer"""
         dql_stmt = select(Interviewer)
@@ -440,39 +410,39 @@ class DeleteOperator:
         dml_stmt = delete(Domain).where(where_clause)
 
         await delete_execute(session=session, dml_stmt=dml_stmt, table=Domain.__tablename__)
-        global_cache.pop(
+        GLOBAL_CACHE.pop(
             KeyFactory.get(
                 KeyType.DOMAIN_SUBDOMAIN,
                 domain_name=domain_name,
                 sub_domain_name=sub_domain_name
             )
         )
-        global_cache.pop(KeyFactory.get(KeyType.ALL_DOMAIN_NAME))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_DOMAIN_NAME))
     
     async def cv(self, session: AsyncSession, title: str):
         """删除一个 cv"""
         dml_stmt = delete(CV).where(CV.title == title)
         await delete_execute(session=session, dml_stmt=dml_stmt, table=CV.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.CV_TITLE, title=title))
-        global_cache.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.CV_TITLE, title=title))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_CV_TITLE))
 
     async def job(self, session: AsyncSession, name: str):
         """删除一个 job"""
         dml_stmt = delete(Job).where(Job.name == name)
         await delete_execute(session=session, dml_stmt=dml_stmt, table=Job.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_JOB))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_JOB))
 
     async def llm(self, session: AsyncSession, model: str):
         """删除一个 llm"""
         dml_stmt = delete(LLM).where(LLM.model == model)
         await delete_execute(session=session, dml_stmt=dml_stmt, table=LLM.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_LLM))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_LLM))
     
     async def interviewer(self, session: AsyncSession, name: str):
         """删除一个 interviewer"""
         dml_stmt = delete(Interviewer).where(Interviewer.name == name)
         await delete_execute(session=session, dml_stmt=dml_stmt, table=Interviewer.__tablename__)
-        global_cache.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
+        GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
 
 
 insert_operator = InsertOperator()

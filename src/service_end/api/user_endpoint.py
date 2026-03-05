@@ -1,5 +1,6 @@
 # endpoints for user client
-from ..data import db, insert_operator, get_operator, delete_operator
+from ..data import db
+from ..data.operation import insert_operator, get_operator, delete_operator
 from ..data.model import CVModel
 from ..exception import UploadError
 from ..service import parse_cv_workflow

@@ -114,10 +114,6 @@ class DBCacheError(ServiceEndExceptionBase):
         return self.message
 
 
-class ServiceException(ServiceEndExceptionBase):
-    """service_end.service 模块内异常基类"""
-    pass
-
 class UploadError(ServiceEndExceptionBase):
     """用户上传文件异常"""
     def __init__(self, message: str, file_name: str):
@@ -128,3 +124,12 @@ class UploadError(ServiceEndExceptionBase):
     def __str__(self) -> str:
         return f"{self.message}. file name: {self.file_name}"
 
+
+class ServiceException(ServiceEndExceptionBase):
+    """service_end.service 模块内异常基类"""
+    pass
+
+
+class QuestionGenException(ServiceException):
+    """题库生成异常"""
+    pass

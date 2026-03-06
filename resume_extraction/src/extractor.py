@@ -1,7 +1,8 @@
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from .models import ResumeModel, CVModel, CVBasicInfo, WorkExperience
 from .parsers import MarkdownParser, TextParser, PdfParser
+from .utils.llm_client import LLMClient
 
 
 class ResumeExtractor:
@@ -12,6 +13,7 @@ class ResumeExtractor:
         self.md_parser = MarkdownParser()
         self.txt_parser = TextParser()
         self.pdf_parser = PdfParser()
+        self.llm_client = LLMClient()
     
     def extract_from_file(self, file_path: str) -> ResumeModel:
         """从文件中提取简历信息
@@ -25,28 +27,17 @@ class ResumeExtractor:
         # 获取文件扩展名
         ext = os.path.splitext(file_path)[1].lower()
         
-        # 根据文件扩展名选择解析器
-        if ext == '.md':
-            # 读取Markdown文件
-            with open(file_path, 'r', encoding='utf-8') as f:
-                text = f.read()
-            return self.md_parser.parse(text)
-        elif ext == '.txt':
+        # 读取文件内容
+        if ext == '.pdf':
+            # 解析PDF文件
+            text = self.pdf_parser.extract_text(file_path)
+        else:
             # 读取文本文件
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
-            return self.txt_parser.parse(text)
-        elif ext == '.pdf':
-            # 解析PDF文件
-            return self.pdf_parser.parse(file_path)
-        else:
-            # 未知格式，尝试使用文本解析器
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
-                return self.txt_parser.parse(text)
-            except:
-                return ResumeModel()
+        
+        # 使用大模型提取信息
+        return self.extract_from_text(text)
     
     def extract_from_text(self, text: str) -> ResumeModel:
         """从文本内容中提取简历信息
@@ -57,12 +48,94 @@ class ResumeExtractor:
         Returns:
             ResumeModel: 解析后的简历模型
         """
-        # 尝试使用Markdown解析器
-        if '#' in text or '##' in text:
-            return self.md_parser.parse(text)
-        else:
-            # 使用文本解析器
-            return self.txt_parser.parse(text)
+        # 使用大模型提取信息
+        llm_result = self.llm_client.extract_resume_info(text)
+        
+        # 转换为ResumeModel
+        return self._convert_llm_result_to_resume_model(llm_result)
+    
+    def _convert_llm_result_to_resume_model(self, llm_result: Dict[str, Any]) -> ResumeModel:
+        """将大模型返回的结果转换为ResumeModel
+        
+        Args:
+            llm_result: 大模型返回的结果
+            
+        Returns:
+            ResumeModel: 转换后的简历模型
+        """
+        from .models import PersonalInfo, Education, OldWorkExperience as WorkExperience, ProjectExperience, Skill, Certificate
+        
+        # 创建个人信息
+        personal_info = PersonalInfo(
+            name=llm_result.get('name'),
+            gender=llm_result.get('gender'),
+            age=llm_result.get('age'),
+            phone=llm_result.get('phone'),
+            email=llm_result.get('email'),
+            address=llm_result.get('address')
+        )
+        
+        # 创建教育背景
+        education = []
+        for edu in llm_result.get('education', []):
+            education.append(Education(
+                school=edu.get('school'),
+                major=edu.get('major'),
+                degree=edu.get('degree'),
+                start_date=edu.get('start_date'),
+                end_date=edu.get('end_date'),
+                gpa=edu.get('gpa')
+            ))
+        
+        # 创建工作经历
+        work_experience = []
+        for work in llm_result.get('work_experience', []):
+            work_experience.append(WorkExperience(
+                company=work.get('company'),
+                position=work.get('position'),
+                start_date=work.get('start_date'),
+                end_date=work.get('end_date'),
+                description=work.get('description')
+            ))
+        
+        # 创建项目经验
+        project_experience = []
+        for project in llm_result.get('project_experience', []):
+            project_experience.append(ProjectExperience(
+                name=project.get('name'),
+                role=project.get('role'),
+                start_date=project.get('start_date'),
+                end_date=project.get('end_date'),
+                description=project.get('description'),
+                technologies=project.get('technologies', [])
+            ))
+        
+        # 创建技能
+        skills = []
+        for skill in llm_result.get('skills', []):
+            skills.append(Skill(
+                category=skill.get('category'),
+                items=skill.get('items', [])
+            ))
+        
+        # 创建证书
+        certificates = []
+        for cert_name in llm_result.get('certificates', []):
+            certificates.append(Certificate(name=cert_name))
+        
+        # 创建简历模型
+        resume = ResumeModel(
+            personal_info=personal_info,
+            education=education,
+            work_experience=work_experience,
+            project_experience=project_experience,
+            skills=skills,
+            certificates=certificates,
+            self_evaluation=llm_result.get('self_evaluation'),
+            interests=llm_result.get('interests', [])
+        )
+        
+        return resume
     
     def detect_format(self, text: str) -> str:
         """检测文本格式

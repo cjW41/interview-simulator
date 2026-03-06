@@ -33,14 +33,14 @@ class PdfParser:
         
         if self.pypdf2_available:
             # 从PDF文件中提取文本
-            pdf_text = self._extract_text_from_pdf(text)
+            pdf_text = self.extract_text(text)
             # 使用文本解析器解析提取的文本
             return text_parser.parse(pdf_text)
         else:
             # 如果没有安装PyPDF2，直接返回空模型
             return ResumeModel()
     
-    def _extract_text_from_pdf(self, pdf_path: str) -> str:
+    def extract_text(self, pdf_path: str) -> str:
         """从PDF文件中提取文本
         
         Args:
@@ -49,6 +49,9 @@ class PdfParser:
         Returns:
             str: 提取的文本
         """
+        if not self.pypdf2_available:
+            return ""
+        
         import PyPDF2
         
         text = ""
@@ -59,3 +62,14 @@ class PdfParser:
                 text += page.extract_text() + '\n'
         
         return clean_text(text)
+    
+    def _extract_text_from_pdf(self, pdf_path: str) -> str:
+        """从PDF文件中提取文本
+        
+        Args:
+            pdf_path: PDF文件路径
+            
+        Returns:
+            str: 提取的文本
+        """
+        return self.extract_text(pdf_path)

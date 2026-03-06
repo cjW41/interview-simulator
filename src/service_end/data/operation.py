@@ -1,11 +1,12 @@
 # data.operation
 # 无状态数据库 Operator 类
 # 无需进行手动的 session 上下文管理，交给 fastapi
+from ..exception.data import QueryError, TargetedRecordNotFound, UpdateEmpty
 from .cache import with_cache_async, GLOBAL_CACHE, KeyType, KeyFactory
-from ..exception import QueryError, TargetedRecordNotFound, UpdateEmpty
-from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard
-from .orm import Variable, Question, Domain, Job, CV, Interviewer, LLM
-from .utils import VariableEnum, query_one_record, insert_execute, update_execute, delete_execute, check_empty
+from .model import QuestionModel, DomainQuestionBank, JobModel, CVModel, InterviewerModel, LLMCard, InterviewModel, PhaseRoleMessageModel, InterviewModel
+from .orm import Question, Domain, Job, CV, Interviewer, LLM, Interview, Message
+from .utils import get_next_sequence_val, query_one_record, insert_execute, update_execute, delete_execute, check_empty
+from .utils.enum_ import SequenceName
 from sqlalchemy import exc, select, insert, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,35 +34,19 @@ class InsertOperator:
 
     [admin] 创建 LLM
     llm(llm_card: LLMCard) -> None
+
+    [user] 创建新 Interview
+    interview_and_message(interview: InterviewModel, messages: list[PhaseRoleMessageModel]) -> None
     ```
     """
 
     async def domain(self, session: AsyncSession, model: DomainQuestionBank):
-        """创建不带 Question 的 Domain"""
-        # 查询当前已有 domain 数量, 加锁
-        dql_stmt = select(Variable).where(Variable.name == VariableEnum.DOMAIN_COUNT.value).with_for_update()
-        data = await query_one_record(
-            dql_stmt=dql_stmt,
-            session=session,
-            table=Variable.__tablename__
-        )
-        domain_count = data.value["value"]  # {"value": number_of_domain}
-        if not isinstance(domain_count, int):
-            raise TargetedRecordNotFound(
-                table=Variable.__tablename__,
-                not_found_filter_condition=str(dql_stmt.whereclause)
-            )
-
-        # 更新 domain_count
-        domain_count += 1
-        dml_stmt = update(Variable).where(Variable.name == VariableEnum.DOMAIN_COUNT.value).values(value={"value": domain_count})
-        await session.execute(statement=dml_stmt)
-
-        # 插入新 domain 记录
+        """创建 Domain"""
+        new_domain_id = await get_next_sequence_val(session=session, seq=SequenceName.DOMAIN)
         nrows = len(model.sub_domains)
         data = [
             {
-                "domain_id": domain_count,
+                "domain_id": new_domain_id,
                 "sub_domain_id": idx + 1,
                 "domain_name": model.domain,
                 "sub_domain_name": model.sub_domains[idx]
@@ -143,12 +128,42 @@ class InsertOperator:
         await insert_execute(session=session, dml_stmt=dml_stmt, table=Interviewer.__tablename__)
         GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_INTERVIEWER))
 
-    async def llm(self, session: AsyncSession, llm_card: LLMCard):
+    async def llm(self, session: AsyncSession, model: LLMCard):
         """创建 llm"""
-        data = [llm_card.model_dump()]
+        data = [model.model_dump()]
         dml_stmt = insert(LLM).values(data)
         await insert_execute(session=session, dml_stmt=dml_stmt, table=LLM.__tablename__)
         GLOBAL_CACHE.pop(KeyFactory.get(KeyType.ALL_LLM))
+
+    async def interview_and_message(
+            self,
+            session: AsyncSession,
+            interview: InterviewModel,
+            messages: list[PhaseRoleMessageModel]
+    ):
+        """插入一场面试的记录。包括创建新 Interview 和此次面试所有 Message"""
+        # interview
+        next_interview_id = await get_next_sequence_val(session=session, seq=SequenceName.INTERVIEW)
+        interview_dict = interview.model_dump()
+        interview_dict["id"] = next_interview_id
+        dml_stmt1 = insert(Interview).values([interview_dict])
+        await insert_execute(session=session, dml_stmt=dml_stmt1, table="interview")
+        
+        # message
+        data = []
+        for idx, message in enumerate(messages):
+            message_dict = message.message_model.model_dump()
+            message_dict.update(
+                {
+                    "interview_id": next_interview_id,
+                    "message_id": idx + 1,
+                    "interview_phase": message.interview_phase.value,
+                    "agent_role": message.agent_role.value,
+                }
+            )
+            data.append(message_dict)
+        dml_stmt2 = insert(Message).values(data)
+        await insert_execute(session=session, dml_stmt=dml_stmt2, table="message")
 
 
 class GetOperator:
@@ -161,7 +176,7 @@ class GetOperator:
     questions(ids: list[int]) -> list[QuestionModel]
 
     [admin] 当前数据库内已有领域题库的领域名称
-    all_domain_name(self) -> list[str]
+    all_domain_name() -> list[str]
 
     [user] 按照领域名称加载 DomainQuestionBank
     domain_question_bank(domain_name: str) -> DomainQuestionBank
@@ -180,6 +195,9 @@ class GetOperator:
 
     [admin] 查询当前全部 Interviewer
     all_interviewer() -> list[InterviewerModel]
+
+    [user] 获取面试报告
+    interview_report(interview_id: int) -> str
     ```
     """
 
@@ -311,6 +329,12 @@ class GetOperator:
             ) from e
         return [InterviewerModel.model_validate(interviewer) for interviewer in results.all()]
 
+    async def interview_report(self, session: AsyncSession, interview_id: int) -> str:
+        """用面试 ID 获取面试报告"""
+        dql_stmt = select(Interview.report).where(Interview.id_ == interview_id)
+        result = await query_one_record(session=session, dql_stmt=dql_stmt, table="interview")
+        return result
+
 
 class UpdateOperator:
     """
@@ -338,7 +362,6 @@ class UpdateOperator:
             dml_stmt=dml_stmt,
             table=Job.__tablename__
         )
-
 
     async def change_interviewer_llm(self, session: AsyncSession, name: str, new_model_name: str):
         """更新 Interviewer 中的模型名称"""

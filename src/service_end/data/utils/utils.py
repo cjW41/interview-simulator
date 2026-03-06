@@ -1,21 +1,20 @@
 # data.utils
-from ..exception import (
+from ...exception.data import (
     QueryError, InsertError, UpdateError, DeleteError,
     IntegrityDataError, UpdateEmpty, TargetedRecordNotFound
 )
-from enum import Enum
+from .enum_ import SequenceName
 from typing import TypeVar
-from sqlalchemy import exc, Select, Insert, Update, Delete, select
+from sqlalchemy import exc, text, Select, Insert, Update, Delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
 
 
-class VariableEnum(Enum):
-    """常量名称枚举类"""
-    DOMAIN_COUNT = "DOMAIN_COUNT"
-
-VariableInitialDict = {"DOMAIN_COUNT": 0} # 常量初始值
+async def get_next_sequence_val(session: AsyncSession, seq: SequenceName) -> int:
+    """获取数据库中一个 Sequence 的下一个值"""
+    result: int = await session.scalar(text(f"SELECT nextval('{seq.value}');"))
+    return result
 
 
 async def query_one_record(

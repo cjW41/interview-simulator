@@ -1,4 +1,6 @@
 # data.model
+from .utils.enum_ import InterviewPhase, AgentRole
+import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -62,8 +64,8 @@ class LLMCard(ORMBaseModel):
     """模型配置卡片"""
     model: str = Field(max_length=30)  # 模型名称 (API 调用规定的标准名称)
     path: str = Field(max_length=50)   # 本地模型文件目录路径，或大模型 API base_url
-    context_window: int                # 上下文窗口大小
-    key_name: str                      # API key 名称
+    context_window_size: int           # 上下文窗口大小
+    api_key_name: str                  # API key 名称
 
 
 # 面试
@@ -74,14 +76,31 @@ class InterviewerModel(ORMBaseModel):
     system_prompt: str
 
 
-class InterviewArrangement(BaseModel):
+class InterviewModel(BaseModel):
     """一场面试"""
-    job: JobModel
-    interviewer: InterviewerModel
-    question_banks: list[DomainQuestionBank]
+    start_time: datetime.datetime
+    end_time: datetime.datetime
+    cv_title: str
+    interviewer_name: str
+    job_name: str
+    report: str
 
 
-class InterviewResponse(BaseModel):
-    """面试记录与总结"""
-    
+class MessageModel(BaseModel):
+    """一条大模型上下文 BaseMessage"""
+    message_type: InterviewPhase
+    content: str
+    # AIMessage
+    tool_calls: dict | None = Field(default=None)
+    invalid_tool_calls: dict | None = Field(default=None)
+    # ToolMessage
+    tool_call_id: str | None = Field(default=None)
+    succeeded: bool | None = Field(default=None)  # msg.status==success -> True, msg.status==error -> False
+
+
+class PhaseRoleMessageModel(BaseModel):
+    """智能体消息"""
+    interview_phase: InterviewPhase
+    agent_role: AgentRole
+    message_model: list[MessageModel]
 

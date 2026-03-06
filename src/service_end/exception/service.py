@@ -1,7 +1,11 @@
 from .base import ServiceEndExceptionBase, ServiceException
 
 
-class LLMEmptyResponse(ServiceException):
-    """大模型响应为空"""
+class LLMResponseError(ServiceException):
+    """大模型响应存在异常"""
     pass
 
+
+class ContextWindowError(ServiceException):
+    """ContextWindow 抛出的异常"""
+    pass

@@ -1,5 +1,6 @@
 from .orm import Base, Base2, Variable
-from .utils import VariableInitialDict, insert_execute
+from .utils import insert_execute
+from .enum_ import SequenceName
 from ..exception import ServiceInitException, DatabaseException
 from sqlalchemy import inspect, text, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -7,6 +8,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 SERVER_DRIVER = "asyncpg"
 
+# TODO 删除 Variable 表，为每个需要自增号牌的表配一个 Sequence
+# TODO 1. __init__ 中创建 Sequence，utils 中增加一个获取下一号牌的方法
+# TODO 2. 更改 operation 中使用 Variable 的方法
+# todo 3. 删除 variable 表
 
 try:
     def ensemble_engine_url(user: str, pwd: str, host: str, port: int, db: str):
@@ -41,7 +46,7 @@ class DataBaseManager:
 
     async def get_session_commit(self):
         """with commit 的 session"""
-        # 使用生成器函数，便于 fastapi 依赖注入和管理 session 生命周期
+        # 使用生成器函数，用于 fastapi 依赖注入和管理 session 生命周期
         # 注入 API 后，在 API 内使用 session 无需使用 with 或手动实现生命周期管理
         assert self.session_maker
         async with self.session_maker() as session:
@@ -55,10 +60,10 @@ class DataBaseManager:
             except Exception as e:      # 事务提交期间抛出异常
                 await session.rollback()
                 raise DatabaseException(f"error while session commit: {str(e)}")
-
+    
     async def get_session_wt_commit(self):
         """without commit 的 session"""
-        # 使用生成器函数，便于 fastapi 依赖注入和管理 session 生命周期
+        # 使用生成器函数，用于 fastapi 依赖注入和管理 session 生命周期
         # 注入 API 后，在 API 内使用 session 无需使用 with 或手动实现生命周期管理
         assert self.session_maker
         async with self.session_maker() as session:
@@ -69,39 +74,26 @@ db = DataBaseManager()
 db.initiate(engine=create_async_engine(url=engine_url))
 
 
-async def __init_variable_table(session: AsyncSession) -> None:
-    """insert data into Variable"""
-    data = [
-        {"name": k, "value": {"value": v}}
-        for k, v in VariableInitialDict.items()
-    ]
-    dml_stmt = insert(Variable).values(data)
-    await insert_execute(session=session, dml_stmt=dml_stmt, table="variable")
-
-
 async def __execute_clear(session: AsyncSession) -> None:
     """在 clear_exists=True 时，先删表再创建"""
     conn = await session.connection()
-    # 普通表
+    # 重新建表
     await conn.run_sync(Base.metadata.drop_all)
     await conn.run_sync(Base.metadata.create_all)
-    # Variable
-    await conn.run_sync(Base2.metadata.drop_all)
-    await conn.run_sync(Base2.metadata.create_all)
-    await __init_variable_table(session=session)
+    # 重新创建 Sequence
+    for name in SequenceName:
+        await conn.execute(text(f"DROP SEQUENCE IF EXISTS {name.value};"))
+        await conn.execute(text(f"CREATE SEQUENCE {name.value} START 1 INCREMENT 1;"))
 
 
 async def __execute_not_clear(session: AsyncSession) -> None:
     """在 clear_exists=True 时，只创建不存在的表"""
     conn = await session.connection()
-    # 普通表
+    # 建表
     await conn.run_sync(Base.metadata.create_all)  # create_all 仅支持同步 Connection
-    # Variable
-    inspector = await conn.run_sync(inspect)
-    if not inspector.has_table(table_name="variable"):
-        await conn.run_sync(Base2.metadata.create_all)
-        await __init_variable_table(session=session)
-
+    # 创建 Sequence
+    for name in SequenceName:
+        await conn.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {name.value} START 1 INCREMENT 1;"))
 
 async def table_init():
     """检查数据库内表是否存在"""
@@ -111,7 +103,7 @@ async def table_init():
     async with AsyncSession(engine) as session:
         # 验证数据库是否启动了
         try:
-            await session.execute(text("SELECT 'are you ok?'"))
+            await session.execute(text("SELECT 'are you ok?';"))
         except SQLAlchemyError as e:
             raise ServiceInitException(
                 source_class=e.__class__.__name__,
@@ -147,4 +139,4 @@ async def table_init():
             raise DatabaseException(f"error while session commit: {str(e)}")
 
 
-__all__ = [ "db", "table_init"] # 服务端启动
+__all__ = [ "db", "table_init"]  # 服务端启动所需

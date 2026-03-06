@@ -1,130 +1,192 @@
-from ..exception import ServiceException, LLMEmptyResponse
-from ..data.model import LLMCard
-from langchain_core.messages.ai import AIMessage, AIMessageChunk, add_ai_message_chunks
+from ..exception import LLMResponseError, ContextWindowError
+from ..data.model import LLMCard, MessageModel
+import os
+from enum import Enum
+from typing import Callable, Sequence
+from collections.abc import AsyncIterator
+from langchain_core.messages import BaseMessage, BaseMessageChunk, AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages.ai import  add_ai_message_chunks
 from langchain_openai import ChatOpenAI
-from typing import Sequence
+from langchain_core.messages import trim_messages
+from langchain_core.runnables import RunnableConfig
 
 
-CHARGE_UNIT = 1E6  # 一百万
+class ResponseStatus(Enum):
+    """
+    响应生成的状态。
+        completed: 生成完成
+        failed: 生成失败
+        in_progressv生成中
+        cancelled: 已取消
+        queued: 请求排队中
+        incomplete: 生成不完整
+    """
+    COMPLETED = "completed"
+    FAILED = "failed"
+    IN_PROGRESSV = "in_progressv"
+    CANCELLED = "cancelled"
+    QUEUED = "queued"
+    INCOMPLETE = "incomplete"
 
 
-class ParsedAIMessage:
+class ContextWindow:
 
-    def __init__(self, ai_message: AIMessage | Sequence[AIMessageChunk], llm_card: LLMCard) -> None:
-        """大模型输出信息提取"""
-        (
-            self.content,
-            self.token_charge_prompt,
-            self.token_charge_completion,
-            self.prompt_tokens,
-            self.completion_tokens
-        ) = ParsedAIMessage.__parse_AIMessage_ChatOpenAI(ai_message, llm_card)
+    def __init__(self, max_tokens: int, token_counter: Callable[[Sequence[BaseMessage]], int] | None,) -> None:
+        """
+        Agent 上下文窗口
+        
+        Args:
+            max_tokens (int): 最大上下文
+            token_counter (Callable[[Sequence[BaseMessage]], int] | None): 上下文计数器
+        """
+        if max_tokens <= 0:  # 不剪裁
+            trimmer = ContextWindow.__identity_trimmer
+        else:
+            if token_counter is None:  # 使用近似 token 估计剪裁
+                from langchain_core.messages.utils import count_tokens_approximately
+                token_counter = count_tokens_approximately
+            trimmer = trim_messages(
+                max_tokens=max_tokens,
+                token_counter=token_counter,
+                include_system=True,
+                allow_partial=False,
+                start_on="human",
+            )
+        self.token_trimmer = trimmer  # 通过 invoke 方法剪裁 list[BaseMessage]
+        self.__full_context: list[BaseMessage] = []  # 完整上下文
 
     @classmethod
-    def __parse_AIMessage_ChatOpenAI(
-            cls,
-            ai_message: AIMessage | Sequence[AIMessageChunk],
-            llm_card: LLMCard
-    ) -> tuple[str, float, float, int, int]:
-        """
-        从 AIMessage 提取信息
+    def __identity_trimmer(cls, messages: Sequence[BaseMessage], **kwargs) -> Sequence[BaseMessage]:
+        return messages
 
-        Args:
-            ai_message (AIMessage | Sequence[AIMessageChunk]): ChatOpenAI 返回的响应对象
-            llm_card (LLMCard): 大模型配置
-        
-        Returns:
-            content (str): AI 响应
-            token_charge_prompt (float): AI 输入计费
-            token_charge_completion (float): AI 输出计费
-            prompt_tokens (int): prompt Token 数
-            completion_tokens (int): completion Token 数
+    @property
+    def context(self, **kwargs) -> Sequence[BaseMessage]:
+        """当前经过剪裁的上下文"""
+        return self.token_trimmer(self.__full_context, **kwargs)
 
-        Note:
-            ```
-            # ChatOpenAI 返回的 AIMessage:
+    def add_message(self, message: BaseMessage):
+        """将新消息添加到上下文末尾"""
+        self.__full_context.append(message)
+
+    def add_streaming_ai_message(self, chunks: list[AIMessageChunk]):
+        """将新的流式输出的一组 AI 消息块拼接为 AI消息"""
+        if len(chunks) <= 1:
+            raise LLMResponseError("empty streaming response")
+        merged_chunk = add_ai_message_chunks(chunks[0], *chunks[1:])
+        self.__full_context.append(
             AIMessage(
-                content="J'adore la programmation.",
-                response_metadata={
-                    "token_usage": {
-                        "completion_tokens": 5,
-                        "prompt_tokens": 31,
-                        "total_tokens": 36,
-                    },
-                    "model_name": "gpt-4o",
-                    "system_fingerprint": "fp_43dfabdef1",
-                    "finish_reason": "stop",
-                    "logprobs": None,
-                },
-                id="run-012cffe2-5d3d-424d-83b5-51c6d4a593d1-0",
-                usage_metadata={"input_tokens": 31, "output_tokens": 5, "total_tokens": 36},
+                content=merged_chunk.content,
+                response_metadata=merged_chunk.response_metadata,
+                additional_kwargs=merged_chunk.additional_kwargs,
+                tool_calls=merged_chunk.tool_call_chunks,
+                invalid_tool_calls=merged_chunk.invalid_tool_calls,
+                usage_metadata=merged_chunk.usage_metadata,
             )
+        )
 
-            # ChatOpenAI 流式输出 (最后一个 chunk 含有 response_metadata)
-            [
-                AIMessageChunk(content=" programmation", id="run-9e1517e3-12bf-48f2-bb1b-2e824f7cd7b0")
-                AIMessageChunk(content=".", id="run-9e1517e3-12bf-48f2-bb1b-2e824f7cd7b0")
-                AIMessageChunk(
-                    content="",
-                    response_metadata={"finish_reason": "stop"},
-                    id="run-9e1517e3-12bf-48f2-bb1b-2e824f7cd7b0",
+    def dump_as_MessageModel(self) -> list[MessageModel]:
+        """将上下文中有价值部分保存为字典的列表"""
+        context: list[MessageModel] = []
+        for msg in self.__full_context:  # 遍历 Human/AI/ToolMessage
+            content = msg.content
+            assert isinstance(content, str)
+            data: dict = {"message_type": msg.__class__.__name__, "content": content}
+
+            if isinstance(msg, HumanMessage):
+                pass
+            elif isinstance(msg, AIMessage):
+                data.update(  # tool_calls & invalid_... 都是 TypedDict
+                    {
+                        "tool_calls": msg.tool_calls,
+                        "invalid_tool_calls": msg.invalid_tool_calls
+                    }
                 )
-            ]
-            ```
-        """
-        if isinstance(ai_message, AIMessage):
-            ai_message_ = ai_message
-        else:    
-            if len(ai_message) == 1:
-                raise LLMEmptyResponse()
-            ai_message_ = add_ai_message_chunks(ai_message[0], *ai_message[1:])  # 合并所有回复
-
-        content = ai_message_.content
-        assert isinstance(content, str)
-
-        token_usages: dict = ai_message_.response_metadata["token_usages"]
-        prompt_tokens = token_usages["prompt_tokens"]
-        competion_tokens = token_usages["completion_tokens"]
-
-        
-        if llm_card.is_local:
-            return (content, -1., -1., prompt_tokens, competion_tokens)
-        else:
-            if (llm_card.token_charge_prompt_unit > 0) and (llm_card.token_charge_completion_unit > 0)
-                return (
-                    content,
-                    llm_card.token_charge_prompt_unit * (prompt_tokens / CHARGE_UNIT),
-                    llm_card.token_charge_completion_unit * (competion_tokens / CHARGE_UNIT),
-                    prompt_tokens, competion_tokens
+            elif isinstance(msg, ToolMessage):
+                data.update(
+                    {"status": msg.status}
                 )
-            else:  # LLMCard 计费存在问题
-                raise ServiceException(f"prompt/completion charge unit of non-local model {llm_card.model} is non-positive")
+            else:
+                msg_class = msg.__class__.__name__
+                if isinstance(msg, BaseMessage):
+                    raise ContextWindowError(f"subclass of BaseMessage {msg_class} is not supported")
+                else:
+                    raise ContextWindowError(f"an unsupported {msg_class} object is added to context window")
+            
+            context.append(MessageModel(**data))
+        return context
 
 
-class LLMChargeTracker:
+class AgentBase:
 
     def __init__(self,
                  llm_card: LLMCard,
-                 *,
-                 initial_charge: float = 0.,
-                 warning_threshold_percentage: float = 0.9):
+                 trim_threshold: float,
+                 token_counter: Callable[[Sequence[BaseMessage]], int] | None,
+                 streaming: bool,
+                 enable_thinking: bool,
+                 temperature: float | None,
+                 top_p: float | None,
+                 top_k: int | None,
+                 **kwargs):
         """
-        大模型调用费用追踪。
-        
+        使用 langchain ChatOpenAI 构建的大模型 Agent
+
         Args:
-            llm_card: 大模型配置
+            llm_card (LLMCard): 大模型
+            trim_threshold (float): 上下文参数。剪裁阈值，设为**非正数**时不进行剪裁，设为超过 1 的值抛出异常
+            token_counter (Callable | None): 上下文参数。Token 计数函数
+            streaming (bool): 推理参数。是否启用流式输出
+            enable_thinking (bool): 推理参数。是否启用思考
+            temperature (float): 推理参数。推理温度
+            top_p (float): 推理参数。top-p 采样值
+            top_k (int): 推理参数。top-k 采样值
+            kwargs: 其余传递给 ChatOpenAI 的参数
         """
-        self.model = llm_card.model
-        self.charge = initial_charge
-    
-    def add_
+        api_key = os.getenv(llm_card.api_key_name)
+        assert api_key is not None
+        assert llm_card.context_window_size > 0
+        args: dict = {"name": llm_card.model, "base_url": llm_card.path, "api_key": api_key,}
+        if streaming:
+            args["stream"] = True
+        if enable_thinking:
+            args["extra_body"] = {"enable_thinking": True}
+        if temperature is not None:
+            args["temperature"] = temperature
+        if top_k is not None:
+            args["top_k"] = top_k
+        if top_p is not None:
+            args["top_p"] = top_p
+        args.update(kwargs)
+        self.llm = ChatOpenAI(**args) # type:ignore
 
+        self.context_window = ContextWindow(
+            max_tokens=int(trim_threshold * llm_card.context_window_size),
+            token_counter=token_counter
+        )
+        self.llm_card = llm_card
 
+    async def ainvoke(
+            self,
+            new_message: HumanMessage | ToolMessage,
+            config: RunnableConfig | None = None
+        ) -> BaseMessage:
+        """调用 ChatOpenAI.ainvoke，自动传入上下文"""
+        self.context_window.add_message(message=new_message)
+        response_message = await self.llm.ainvoke(self.context_window.context, config=config)
+        return response_message
 
-
-
-
-
-
-
+    async def astream(
+            self,
+            new_message: HumanMessage | ToolMessage,
+            config: RunnableConfig | None = None
+    ) -> AsyncIterator[BaseMessageChunk]:
+        """
+        调用 ChatOpenAI.astream，自动传入上下文
+        ```
+        async for chunk in (await self.astream(message)):
+            ...
+        ```
+        """
+        self.context_window.add_message(message=new_message)
+        return self.llm.astream(self.context_window.context, config=config)
 

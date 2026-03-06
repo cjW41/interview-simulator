@@ -1,0 +1,16 @@
+# 项目依赖项
+
+# 核心依赖
+python>=3.11
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 文本处理
+markdown>=3.4.0
+regex>=2023.10.3
+
+# PDF处理（可选）
+# PyPDF2>=3.0.1
+
+# 测试
+pytest>=7.0.0

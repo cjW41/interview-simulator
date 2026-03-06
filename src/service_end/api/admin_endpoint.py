@@ -76,7 +76,11 @@ async def create_question_batch(
 ):
     """
     调用 LLM 工作流，批量插入 Question。
-    `domain_name`,`sub_domain_name` 代表 Question 所属领域
+
+    Args:
+        domain_name (str): 领域名称
+        sub_domain_name (str): 子领域名称
+        number (int): 每个“领域-子领域”题目数量
     """
     try:
         for sub_domain_name in sub_domain_names:
@@ -126,10 +130,9 @@ async def insert_cv_batch(
 @router.put("/llm/{model}")
 async def insert_llm(
     model: str,
-    is_local: bool,
     path: str,
-    cost: float = Query(default=0.),
-    cost_limit: float = Query(default=1E8),
+    context_window: int,
+    key_name: str,
     session: AsyncSession = SessionDepends_Commit
 ):
     """创建 LLM"""
@@ -137,10 +140,9 @@ async def insert_llm(
         session = session,
         llm_card = LLMCard(
             model=model,
-            is_local=is_local,
             path=path,
-            cost=cost,
-            cost_limit=cost_limit
+            context_window=context_window,
+            key_name=key_name,
         )
     )
 
@@ -183,27 +185,19 @@ async def update_job(
     )
 
 
-@router.post("/llm/{model}")
-async def update_llm_cost_limit(
-    model: str,
-    new_cost_limit: float,
-    session: AsyncSession = SessionDepends_Commit
-):
-    """重置一个 LLM 的 cost"""
-    await update_operator.llm_cost_refresh(
-        session=session,
-        model=model,
-        cost_limit=new_cost_limit
-    )
-
-
 @router.post("/interview/interviewer/{name}")
 async def update_interviewer_llm(
     name: str,
     new_model_name: str,
     session: AsyncSession = SessionDepends_Commit
 ):
-    """更换 Interviewer 中的模型"""
+    """
+    更换 Interviewer 中的模型
+    
+    Args:
+        name (str): 待替换的 interviewer 名称
+        new_model_name (str): 被替换的新模型名称
+    """
     await update_operator.change_interviewer_llm(
         session=session,
         name=name,

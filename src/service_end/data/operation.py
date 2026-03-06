@@ -321,9 +321,6 @@ class UpdateOperator:
     [admin] 更新一个 job
     job(model: JobModel) -> None
 
-    [admin] 更新大模型计费
-    llm_cost_refresh(model: str, cost_limit: float) -> None
-
     [admin] 更新 Interviewer 中的模型
     change_interviewer_llm(name: str, new_model_name: str) -> None
     ```
@@ -342,21 +339,6 @@ class UpdateOperator:
             table=Job.__tablename__
         )
 
-    async def llm_cost_refresh(self, session: AsyncSession, model: str, cost_limit: float):
-        """更新大模型计费"""
-        where_clause = (LLM.model == model)
-        empty_check_query = select(LLM).where(where_clause)
-        results = await session.scalars(empty_check_query)
-        if len(results.all()) == 0:
-            raise UpdateEmpty(table=Job.__tablename__, filter_condition=str(where_clause))
-        
-        value = {"cost": 0., "cost_limit": cost_limit}
-        dml_stmt = update(LLM).where(where_clause).values(**value)
-        await update_execute(
-            session=session,
-            dml_stmt=dml_stmt,
-            table=LLM.__tablename__
-        )
 
     async def change_interviewer_llm(self, session: AsyncSession, name: str, new_model_name: str):
         """更新 Interviewer 中的模型名称"""

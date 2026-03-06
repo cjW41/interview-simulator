@@ -83,10 +83,9 @@ class Job(Base):
 class LLM(Base):
     """大模型表"""
     model: Mapped[str] = mapped_column(VARCHAR(30), primary_key=True)
-    is_local: Mapped[bool] = mapped_column(nullable=False)
     path: Mapped[str] = mapped_column(VARCHAR(50), nullable=False)
-    cost: Mapped[float] = mapped_column(REAL(), default=0.)
-    cost_limit: Mapped[float] = mapped_column(REAL(), default=1E8)
+    context_window: Mapped[int] = mapped_column(nullable=False)
+    key_name: Mapped[str] = mapped_column(nullable=False)
 
     interviewers: Mapped[list[Interviewer]] = relationship(
         back_populates="llm",

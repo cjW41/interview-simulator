@@ -60,11 +60,10 @@ class CVModel(ORMBaseModel):
 
 class LLMCard(ORMBaseModel):
     """模型配置卡片"""
-    model: str = Field(max_length=30)       # 模型名称 (API 调用规定的标准名称)
-    is_local: bool                          # 是否是本地模型
-    path: str = Field(max_length=50)        # 本地模型文件目录路径，或大模型 API base_url
-    cost: float = Field(default=0.)         # 已使用大模型 API 费用（程序内计算）
-    cost_limit: float = Field(default=1E8)  # 大模型 API 费用上限, 默认不设上限
+    model: str = Field(max_length=30)  # 模型名称 (API 调用规定的标准名称)
+    path: str = Field(max_length=50)   # 本地模型文件目录路径，或大模型 API base_url
+    context_window: int                # 上下文窗口大小
+    key_name: str                      # API key 名称
 
 
 # 面试

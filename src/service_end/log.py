@@ -4,7 +4,7 @@ import queue
 from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler, QueueHandler, QueueListener
 
 DETAIL_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-ROOT_LEVEL = logging.INFO
+ROOT_LEVEL = logging.DEBUG
 
 _queue_listener = None
 
@@ -24,7 +24,7 @@ def setup_log():
     # 一般详细日志
     common_handler = TimedRotatingFileHandler(
         filename=COMMON_LOG,
-        when="midnight",  # 日志轮转日期
+        when="midnight",
         interval=INTERVAL,
         backupCount=TIME_BACKUP_COUNT,
         encoding="utf-8"

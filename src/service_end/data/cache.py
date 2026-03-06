@@ -150,7 +150,7 @@ class DBCache:
         return None  # 缓存对象本身就不存在，或被 pop 掉了
 
     def update(self, key: str, value: Any, check_alive: bool = True) -> None:
-        """创建/更新一组缓存"""
+        """创建/更新一个缓存"""
         if check_alive:
             self.__check_alive_and_remove()
         if len(self.cache) >= self.size:
